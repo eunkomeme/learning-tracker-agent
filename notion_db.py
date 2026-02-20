@@ -217,6 +217,20 @@ class NotionDB:
         results = self.client.databases.query(**kwargs)
         return [_format_page(p) for p in results.get("results", [])]
 
+    def url_exists(self, url: str) -> bool:
+        """해당 URL이 이미 데이터베이스에 존재하는지 확인합니다."""
+        if not url:
+            return False
+        try:
+            results = self.client.databases.query(
+                database_id=self.db_id,
+                filter={"property": "URL", "url": {"equals": url}},
+                page_size=1,
+            )
+            return len(results.get("results", [])) > 0
+        except Exception:
+            return False
+
     def update_status(
         self, page_id: str, status: str, notes: str = ""
     ) -> dict:
