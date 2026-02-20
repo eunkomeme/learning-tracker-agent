@@ -1,0 +1,5 @@
+anthropic>=0.40.0
+notion-client>=2.2.1
+python-dotenv>=1.0.0
+trafilatura>=1.6.0
+rich>=13.7.0
