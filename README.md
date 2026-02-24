@@ -1,123 +1,44 @@
 # Learning Tracker Agent
 
-공부하면서 발견한 링크/텍스트/PDF를 **한 번에 수집·요약·저장**하는 개인 학습 자동화 프로젝트입니다.  
-핵심 목표는 "흩어진 학습 기록"을 Notion DB 하나로 통합하고, 이 데이터를 장기적으로 **회고/포트폴리오 자산**으로 전환하는 것입니다.
+링크/텍스트/PDF를 수집·요약·저장해서 Notion DB에 학습 기록을 쌓는 개인 프로젝트.
 
----
+## 개요
 
-## 1) 프로젝트 한 줄 소개
+* 입력: Telegram(모바일 공유)
+* 처리:
 
-> 모바일에서 공유한 자료를 Gemini가 요약하고, Notion에 구조화 저장해 학습 히스토리를 자동으로 쌓는 에이전트
+  * URL: `trafilatura`로 본문 추출
+  * PDF: `pypdf`로 텍스트 추출
+  * TEXT: 원문 사용
+* 요약: Gemini, JSON 스키마 기반 구조화 출력
+* 저장: Notion DB에 `title / summary / key_insights / tags / source` 형태로 저장, 링크 반환
+* 중복 방지: URL 기준 중복 저장(`url_exists`)
 
----
-
-## 2) 문제 정의 (Why)
-
-기존 학습 방식의 문제:
-- 브라우저 북마크, 메모앱, 채팅, 이메일에 자료가 분산됨
-- "읽긴 읽었는데 무엇을 배웠는지" 기록이 남지 않음
-- 시간이 지나면 다시 찾기/복습이 어려움
-
-이 프로젝트가 해결하는 지점:
-- 입력 채널을 Telegram으로 단순화 (모바일 중심)
-- 요약/핵심 인사이트/태그를 자동 생성
-- Notion DB에 일관된 스키마로 저장
-
----
-
-## 3) 프로젝트 목표 (What)
-
-- 학습 입력 마찰 최소화: 링크 공유 or 텍스트 붙여넣기 or PDF 업로드
-- 요약 품질 표준화: Gemini 기반 구조화 출력(JSON)
-- 검색/회고 가능성 강화: 태그·상태·출처 중심으로 Notion 축적
-- 포트폴리오 활용성 확보: 개발 의도/구현/운영 기록 문서화
-
----
-
-## 4) 시스템 아키텍처 (How)
+## 구조
 
 ```text
-[User Input on Mobile]
-  ├─ URL
-  ├─ Plain Text
-  └─ PDF File
-          ↓
-      Telegram Bot (python-telegram-bot)
-          ↓
-   Input Router (url/text/pdf)
-          ↓
-  - URL: trafilatura 본문 추출
-  - PDF: pypdf 텍스트 추출
-  - TEXT: 직접 본문 사용
-          ↓
-   Gemini Summarizer (JSON schema)
-          ↓
-      NotionDB.add_article()
-          ↓
- Notion Learning Database (검색/회고/포트폴리오 데이터)
+Telegram Bot → Input Router(url/text/pdf)
+→ (trafilatura / pypdf / raw text)
+→ Gemini Summarizer(JSON)
+→ NotionDB.add_article()
+→ Notion Learning Database
 ```
 
----
+## 구성 파일
 
-## 5) 기술 스택
+* `telegram_bot.py`: `/start`, URL/텍스트/PDF 처리, 실패 안내, Notion 저장
+* `notion_db.py`: Notion CRUD, 아티클/이슈 저장, URL 중복 검사
+* `agent.py`: CLI 기반 워크플로우
+* `newsletter.py`: RSS/이메일 기반 자동 수집 파이프라인
+* `TELEGRAM_BOT.md`, `.env.example`, `requirements.txt`
 
-- **Language**: Python
-- **LLM**: Google Gemini (`google-generativeai`)
-- **Chat Interface**: Telegram Bot API (`python-telegram-bot`)
-- **Content Extraction**:
-  - URL: `trafilatura`
-  - PDF: `pypdf`
-- **Knowledge Base**: Notion API (`notion-client`)
-- **Config**: `.env` (`python-dotenv`)
-
----
-
-## 6) 현재 구현된 기능
-
-### 6-1. Core 모듈
-
-- `notion_db.py`
-  - Notion CRUD 래퍼
-  - 아티클/이슈 저장
-  - URL 중복 검사(`url_exists`)
-- `agent.py`
-  - CLI 기반 요약/정리 워크플로우
-- `newsletter.py`
-  - RSS/이메일 기반 자동 수집 파이프라인
-
-### 6-2. Telegram Bot 기능
-
-- `telegram_bot.py`
-  - `/start` 안내 메시지
-  - 입력 3종 지원:
-    1. URL 포함 메시지
-    2. 원문 텍스트 직접 입력
-    3. PDF 문서 업로드
-  - 처리 흐름:
-    - URL → 본문 추출 실패 시 에러 안내
-    - TEXT → 최소 길이 검증 후 요약
-    - PDF → 텍스트 추출 후 요약 (스캔 PDF 예외 처리)
-  - 결과 저장:
-    - summary / key_insights / tags / source / title 구조화
-    - Notion 페이지 생성 및 링크 반환
-
-### 6-3. 문서/운영
-
-- `TELEGRAM_BOT.md`: BotFather 생성부터 실행·트러블슈팅까지
-- `.env.example`: 필수 환경변수 템플릿
-- `requirements.txt`: 런타임 의존성 정의
-
----
-
-## 7) 실행 방법 (로컬)
-
-1. 의존성 설치
+## 실행
 
 ```bash
 pip install -r requirements.txt
 ```
 
-2. 환경변수 구성 (`.env`)
+`.env`
 
 ```env
 GEMINI_API_KEY=...
@@ -126,149 +47,27 @@ NOTION_DATABASE_ID=...
 TELEGRAM_BOT_TOKEN=...
 ```
 
-3. 실행
-
 ```bash
 python telegram_bot.py
 ```
 
-4. Telegram에서 테스트
-- `/start`
-- URL 1개 전송
-- 긴 텍스트 붙여넣기
-- PDF 파일 전송
+## 배포(Railway)
 
+Telegram 봇만 운영 시 변수 4개:
+`GEMINI_API_KEY`, `NOTION_TOKEN`, `NOTION_DATABASE_ID`, `TELEGRAM_BOT_TOKEN`
+Start Command: `python telegram_bot.py`
 
-## 7-2) Railway 배포 기준 운영 설정
+## 한계
 
-Telegram 봇 단독 운영 시 Railway에는 아래 **4개 변수만** 넣어도 동작합니다.
+* 스캔 PDF는 텍스트 추출 실패 가능
+* 로그인/권한 필요한 페이지는 본문 추출 실패 가능
+* polling 방식이라 상시 프로세스 운영 필요
+* API quota 소진 시 요약 지연/실패 가능
 
-- `GEMINI_API_KEY`
-- `NOTION_TOKEN`
-- `NOTION_DATABASE_ID`
-- `TELEGRAM_BOT_TOKEN`
+## 로드맵
 
-배포 체크리스트:
-1. GitHub 레포 연결
-2. Start Command: `python telegram_bot.py`
-3. Variables 등록 후 Deploy
-4. 로그에서 `Telegram bot is running...` 확인
-
-> `RSS_FEEDS`, `EMAIL_*`, `NEWSLETTER_SENDERS`, `EMAIL_DAYS_BACK`는 `newsletter.py` 자동화용이므로 Telegram 봇만 쓸 때는 필수가 아닙니다.
-
----
-
-## 8) 진행 내역 (Portfolio Timeline)
-
-### Phase 1 — 기반 구축
-- Notion 학습 DB 스키마 중심으로 데이터 모델 확정
-- Notion CRUD 유틸 구현
-- Gemini 요약/인사이트 생성 파이프라인 구성
-
-### Phase 2 — 자동 수집 확장
-- RSS/이메일 입력 채널 연결
-- 반복 가능한 수집 작업 흐름 정리
-
-### Phase 3 — 모바일 입력 최적화
-- Telegram Bot 도입
-- URL 공유 기반 저장 자동화
-- URL 중복 저장 방지 적용
-
-### Phase 4 — 입력 실패 케이스 보완
-- 로그인/동적 페이지 등 URL 파싱 실패 문제 대응
-- **Plain Text 직접 요약 추가**
-- **PDF 업로드 요약 추가**
-- 사용자 피드백 메시지 개선
-
-### Phase 5 — 문서화/포트폴리오 정리
-- README/가이드 문서 업데이트
-- 기능/의도/운영 포인트를 재사용 가능한 형태로 정리
-
----
-
-## 9) 이 프로젝트의 포트폴리오 포인트
-
-- **문제 해결 중심 설계**: 단순 챗봇이 아니라 "학습 기록 분산" 문제를 명확히 타겟팅
-- **실사용 UX**: 모바일 공유 흐름을 기준으로 입력 마찰 최소화
-- **견고성 개선 과정**: URL-only 한계를 텍스트/PDF로 확장하며 실패 케이스 대응
-- **End-to-End 구현**: 수집 → 추출 → 요약 → 구조화 저장까지 완결된 파이프라인
-- **확장 가능성**: webhook, 운영 모니터링, 주간 리포트, 태그 정규화 등 후속 개발 여지
-
----
-
-## 10) 알려진 한계
-
-- 스캔(이미지) 기반 PDF는 텍스트 추출 실패 가능
-- 로그인/권한 필요한 웹페이지는 본문 추출 실패 가능
-- 현재 polling 방식이라 상시 프로세스 운영 필요
-- API quota 소진 시 요약 요청 지연/실패 가능
-
----
-
-## 11) 다음 로드맵
-
-- [ ] 무료 티어 기반 상시 배포 안정화 (Railway/Render/Koyeb 중 선택)
-- [ ] PDF OCR fallback 추가 (스캔 PDF 대응)
-- [ ] 입력 실패 자동 재시도/대체 경로 안내 강화
-- [ ] 태그 정규화 + 유사 문서 클러스터링
-- [ ] 주간 학습 리포트 자동 생성 (Notion 데이터 기반)
-- [ ] 간단 대시보드(학습량/주제/완료율) 추가
-
----
-
-## 12) 운영/보안 메모
-
-- 민감정보(API 키/토큰)는 `.env`에만 저장 (`.gitignore` 유지)
-- 토큰 노출 시 즉시 재발급(rotate)
-- 외부 배포 시 로그에 민감정보가 출력되지 않도록 점검
-
----
-
-## 13) 관련 문서
-
-- Telegram 설정/사용 가이드: `TELEGRAM_BOT.md`
-- 환경변수 예시: `.env.example`
-- 핵심 코드:
-  - `telegram_bot.py`
-  - `notion_db.py`
-  - `agent.py`
-  - `newsletter.py`
-
-
----
-
-## 14) 포트폴리오 발표용 데모 시나리오 (3분)
-
-1. 문제 제시 (30초)
-- 학습 자료가 북마크/메신저/메모앱으로 분산되어 회고가 어려웠던 문제 설명
-
-2. 실시간 데모 (90초)
-- Telegram에서 URL 1개 전송 → 자동 요약/저장 확인
-- 로그인 필요한 페이지를 대신해 긴 텍스트 전송 → 저장 확인
-- PDF 업로드 → 텍스트 추출 후 저장 확인
-
-3. 결과 확인 (30초)
-- Notion DB에 title/summary/key insights/tags/source가 구조화되어 쌓이는 모습 보여주기
-
-4. 기술 포인트 (30초)
-- 입력 라우팅(URL/TEXT/PDF), 예외 처리, 중복 URL 방지, 운영 시 고려사항 간단 설명
-
----
-
-## 15) 트러블슈팅 히스토리 (실제 개선 과정)
-
-- URL 본문 추출 실패(로그인/동적 렌더링) 이슈
-  - 대응: 텍스트 직접 입력 + PDF 업로드 요약 경로 추가
-- 무료 배포 플랫폼 제약(카드 등록, 슬립 정책) 이슈
-  - 대응: 플랫폼 옵션 분리 및 운영 전략 문서화
-- API quota 소진 이슈
-  - 대응: 재시도 시나리오 및 대체 입력 경로 안내
-
----
-
-## 16) 향후 개선 시 포트폴리오 확장 아이디어
-
-- OCR 파이프라인 도입으로 스캔 PDF 지원
-- 요약 품질 평가(길이/정보밀도/중복률) 지표 수집
-- 주간 리포트 자동 생성 및 Slack/Telegram 재전송
-- 개인 학습 주제 맵(태그 기반 시각화) 구축
+* OCR fallback
+* 입력 실패 재시도/대체 경로 안내 강화
+* 태그 정규화 + 유사 문서 클러스터링
+* 주간 학습 리포트 자동 생성
+* 학습량/주제/완료율 대시보드
