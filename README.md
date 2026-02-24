@@ -1,6 +1,6 @@
 # Learning Tracker Agent
 
-링크/텍스트/PDF를 수집·요약·저장해서 Notion DB에 학습 기록을 쌓는 개인 프로젝트.
+링크/텍스트/PDF를 수집·요약·저장해서 Notion DB에 AI/LLM 도메인 이슈 트래킹 + 학습 자료 정리를 자동화하기 위한 프로젝트
 
 ## 개요
 
