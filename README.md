@@ -138,6 +138,24 @@ python telegram_bot.py
 - 긴 텍스트 붙여넣기
 - PDF 파일 전송
 
+
+## 7-2) Railway 배포 기준 운영 설정
+
+Telegram 봇 단독 운영 시 Railway에는 아래 **4개 변수만** 넣어도 동작합니다.
+
+- `GEMINI_API_KEY`
+- `NOTION_TOKEN`
+- `NOTION_DATABASE_ID`
+- `TELEGRAM_BOT_TOKEN`
+
+배포 체크리스트:
+1. GitHub 레포 연결
+2. Start Command: `python telegram_bot.py`
+3. Variables 등록 후 Deploy
+4. 로그에서 `Telegram bot is running...` 확인
+
+> `RSS_FEEDS`, `EMAIL_*`, `NEWSLETTER_SENDERS`, `EMAIL_DAYS_BACK`는 `newsletter.py` 자동화용이므로 Telegram 봇만 쓸 때는 필수가 아닙니다.
+
 ---
 
 ## 8) 진행 내역 (Portfolio Timeline)
@@ -189,7 +207,7 @@ python telegram_bot.py
 
 ## 11) 다음 로드맵
 
-- [ ] 무료 티어 기반 상시 배포 안정화 (Render/Koyeb 등)
+- [ ] 무료 티어 기반 상시 배포 안정화 (Railway/Render/Koyeb 중 선택)
 - [ ] PDF OCR fallback 추가 (스캔 PDF 대응)
 - [ ] 입력 실패 자동 재시도/대체 경로 안내 강화
 - [ ] 태그 정규화 + 유사 문서 클러스터링
