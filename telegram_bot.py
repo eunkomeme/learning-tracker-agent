@@ -13,12 +13,14 @@ Telegram bot for Learning Tracker Agent.
 from __future__ import annotations
 
 import json
+import io
 import os
 import re
 import sys
 from typing import Optional
 
 import google.generativeai as genai
+from pypdf import PdfReader
 import trafilatura
 from dotenv import load_dotenv
 from telegram import Update
@@ -108,36 +110,90 @@ def summarize_with_gemini(model: genai.GenerativeModel, title: str, url: str, ar
         return json.loads(cleaned)
 
 
+def extract_pdf_text(pdf_bytes: bytes) -> str:
+    reader = PdfReader(io.BytesIO(pdf_bytes))
+    pages = []
+    for page in reader.pages:
+        pages.append(page.extract_text() or "")
+
+    content = "\n".join(pages).strip()
+    if not content:
+        raise ValueError("PDF에서 텍스트를 추출하지 못했습니다. (스캔 이미지 PDF일 수 있어요)")
+
+    if len(content) > 10000:
+        content = content[:10000] + "\n\n[...truncated]"
+
+    return content
+
+
+def build_text_payload(message_text: str) -> tuple[str, str, str]:
+    url = extract_url(message_text)
+    if url:
+        title, content = fetch_article(url)
+        return title, url, content
+
+    cleaned = message_text.strip()
+    if len(cleaned) < 120:
+        raise ValueError("URL이 없으면 원문 텍스트를 조금 더 길게 보내주세요. (최소 120자)")
+
+    title = cleaned.splitlines()[0][:60] or "텍스트 메모"
+    if len(cleaned) > 10000:
+        cleaned = cleaned[:10000] + "\n\n[...truncated]"
+
+    return title, "", cleaned
+
+
+async def build_document_payload(update: Update, context: ContextTypes.DEFAULT_TYPE) -> tuple[str, str, str]:
+    if not update.message or not update.message.document:
+        raise ValueError("문서 파일을 찾지 못했습니다.")
+
+    doc = update.message.document
+    mime = doc.mime_type or ""
+    if mime != "application/pdf":
+        raise ValueError("현재는 PDF 파일만 지원합니다. PDF를 업로드해주세요.")
+
+    tg_file = await context.bot.get_file(doc.file_id)
+    data = await tg_file.download_as_bytearray()
+    content = extract_pdf_text(bytes(data))
+
+    title = (doc.file_name or "PDF 문서").rsplit(".", 1)[0][:60]
+    return title or "PDF 문서", "", content
+
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(
         "안녕하세요! 📚\n"
-        "링크를 보내주시면 Gemini가 요약하고 Notion에 저장해드려요.\n\n"
+        "링크/원문 텍스트/PDF를 보내주시면 Gemini가 요약하고 Notion에 저장해드려요.\n\n"
         "사용 예시:\n"
         "- https://arxiv.org/abs/2401.00001\n"
-        "- 이 글 저장해줘 https://example.com/article"
+        "- 이 글 저장해줘 https://example.com/article\n"
+        "- (텍스트 원문 붙여넣기)\n"
+        "- PDF 파일 업로드"
     )
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if not update.message or not update.message.text:
-        return
-
-    url = extract_url(update.message.text)
-    if not url:
-        await update.message.reply_text("링크를 찾지 못했어요. URL을 포함해서 다시 보내주세요 🙏")
+    if not update.message:
         return
 
     notion: NotionDB = context.application.bot_data["notion"]
     model: genai.GenerativeModel = context.application.bot_data["model"]
 
-    if notion.url_exists(url):
-        await update.message.reply_text("이미 Notion에 저장된 링크예요 ✅")
-        return
-
-    status_msg = await update.message.reply_text("링크 분석 중...")
-
     try:
-        title, content = fetch_article(url)
+        if update.message.document:
+            status_msg = await update.message.reply_text("PDF 분석 중...")
+            title, url, content = await build_document_payload(update, context)
+        elif update.message.text:
+            status_msg = await update.message.reply_text("입력 분석 중...")
+            title, url, content = build_text_payload(update.message.text)
+        else:
+            await update.message.reply_text("텍스트, URL, 또는 PDF 파일을 보내주세요 🙏")
+            return
+
+        if url and notion.url_exists(url):
+            await status_msg.edit_text("이미 Notion에 저장된 링크예요 ✅")
+            return
+
         await status_msg.edit_text("요약 생성 중...")
         structured = summarize_with_gemini(model, title, url, content)
 
@@ -180,7 +236,12 @@ def main() -> None:
     app.bot_data["model"] = model
 
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    app.add_handler(
+        MessageHandler(
+            (filters.TEXT & ~filters.COMMAND) | filters.Document.PDF,
+            handle_message,
+        )
+    )
 
     print("Telegram bot is running...")
     app.run_polling(drop_pending_updates=True)
