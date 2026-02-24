@@ -71,3 +71,38 @@ Start Command: `python telegram_bot.py`
 * 태그 정규화 + 유사 문서 클러스터링
 * 주간 학습 리포트 자동 생성
 * 학습량/주제/완료율 대시보드
+
+## Codex/Claude Code 연동 아이디어
+
+Gemini API 대신, 현재 작업 중인 리포지토리에서 URL/PDF를 바로 처리하고 결과를 Notion DB로 적재하는 방식도 가능합니다.
+
+### 추천 아키텍처
+
+1. **입력 수집(리포 기반)**
+   * `inputs/` 폴더에 URL 목록(`.md`/`.txt`) 또는 PDF 파일을 추가
+   * 또는 GitHub Issue/PR 코멘트로 URL/PDF 경로를 전달
+
+2. **실행 트리거**
+   * Codex/Claude Code를 로컬에서 실행하거나 CI(GitHub Actions)에서 실행
+   * 예: `python agent.py --source inputs/ --llm_provider anthropic`
+
+3. **요약 생성(LLM Provider 교체)**
+   * 기존 `summarize_with_gemini()`를 provider 인터페이스로 분리
+   * `GeminiProvider`, `OpenAIProvider(Codex)`, `AnthropicProvider(Claude)` 구현
+   * 동일 JSON 스키마를 강제해 Notion 스키마와 호환 유지
+
+4. **Notion 적재**
+   * 현재 `notion_db.py`의 `add_article()`를 재사용
+   * URL 중복 검사(`url_exists`)는 그대로 유지
+
+### 장점
+
+* 리포지토리 중심 워크플로우(문서 버전관리 + 자동화) 가능
+* 특정 모델에 락인되지 않고 공급자 교체 가능
+* CI에서 정기 실행 시 주간/일간 배치 처리에 유리
+
+### 구현 시 체크포인트
+
+* PDF는 스캔본 대비 OCR fallback 필요
+* LLM별 응답 포맷 차이를 provider 레이어에서 흡수
+* Notion API rate limit 대비 재시도(backoff) 적용 권장
