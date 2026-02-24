@@ -1,0 +1,8 @@
+google-generativeai>=0.8.0
+notion-client>=2.2.1
+python-dotenv>=1.0.0
+trafilatura>=1.6.0
+lxml_html_clean>=0.1.0
+rich>=13.7.0
+feedparser>=6.0.0
+beautifulsoup4>=4.12.0

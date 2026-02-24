@@ -1,0 +1,6 @@
+.env
+.processed_urls.json
+.scheduler.pid
+newsletter.log
+__pycache__/
+*.pyc
