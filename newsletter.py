@@ -33,7 +33,7 @@ from pathlib import Path
 from typing import Optional
 from urllib.parse import urlparse
 
-import anthropic
+import google.generativeai as genai
 import feedparser
 import trafilatura
 from bs4 import BeautifulSoup
@@ -112,7 +112,7 @@ def _get_domain(url: str) -> str:
 
 
 def process_single_article(
-    client: anthropic.Anthropic,
+    model: genai.GenerativeModel,
     notion: NotionDB,
     url: str,
     hint_title: str = "",
@@ -172,12 +172,8 @@ def process_single_article(
     )
 
     try:
-        response = client.messages.create(
-            model="claude-opus-4-6",
-            max_tokens=1024,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        raw = response.content[0].text.strip()
+        response = model.generate_content(prompt)
+        raw = response.text.strip()
 
         # JSON 파싱 (코드블록 래핑 제거)
         if raw.startswith("```"):
@@ -217,7 +213,7 @@ def process_single_article(
 # ──────────────────────────────────────────────────────────────────────────────
 
 def process_rss_feeds(
-    client: anthropic.Anthropic,
+    model: genai.GenerativeModel,
     notion: NotionDB,
     processed_urls: set,
 ) -> int:
@@ -247,7 +243,7 @@ def process_rss_feeds(
                 url = entry.get("link", "")
                 title = entry.get("title", "")
                 if url and is_article_url(url):
-                    if process_single_article(client, notion, url, title, processed_urls):
+                    if process_single_article(model, notion, url, title, processed_urls):
                         saved += 1
 
         except Exception as e:
@@ -301,7 +297,7 @@ def extract_urls_from_email(msg) -> list:
 
 
 def process_email_newsletters(
-    client: anthropic.Anthropic,
+    model: genai.GenerativeModel,
     notion: NotionDB,
     processed_urls: set,
 ) -> int:
@@ -354,7 +350,7 @@ def process_email_newsletters(
                 console.print(f"  URL {len(urls)}개 추출")
 
                 for url in urls:
-                    if process_single_article(client, notion, url, "", processed_urls):
+                    if process_single_article(model, notion, url, "", processed_urls):
                         saved += 1
 
         mail.logout()
@@ -387,12 +383,13 @@ def main():
     # --url, --rss, --email 모두 없으면 전체 실행
     run_all = not any([args.rss, args.email, args.url])
 
-    for var in ["ANTHROPIC_API_KEY", "NOTION_TOKEN", "NOTION_DATABASE_ID"]:
+    for var in ["GEMINI_API_KEY", "NOTION_TOKEN", "NOTION_DATABASE_ID"]:
         if not os.environ.get(var):
             console.print(f"[red]오류: {var}가 .env에 설정되지 않았습니다.[/red]")
             return
 
-    client = anthropic.Anthropic()
+    genai.configure(api_key=os.environ.get("GEMINI_API_KEY"))
+    model = genai.GenerativeModel("gemini-2.0-flash")
     notion = NotionDB()
     processed_urls = load_processed_urls()
 
@@ -410,16 +407,16 @@ def main():
     # 단일 URL 수동 추가
     if args.url:
         console.print(f"\n[bold]🔗 수동 URL 추가[/bold]")
-        if process_single_article(client, notion, args.url, "", processed_urls):
+        if process_single_article(model, notion, args.url, "", processed_urls):
             total += 1
 
     # RSS 피드 처리
     if args.rss or run_all:
-        total += process_rss_feeds(client, notion, processed_urls)
+        total += process_rss_feeds(model, notion, processed_urls)
 
     # 이메일 뉴스레터 처리
     if args.email or run_all:
-        total += process_email_newsletters(client, notion, processed_urls)
+        total += process_email_newsletters(model, notion, processed_urls)
 
     # 결과 요약
     console.print()

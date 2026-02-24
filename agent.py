@@ -1,13 +1,13 @@
 """
 Learning Tracker Agent
 
-AI 학습 아티클과 이슈를 노션으로 관리하는 Claude 기반 CLI 에이전트.
+AI 학습 아티클과 이슈를 노션으로 관리하는 Gemini 기반 CLI 에이전트.
 
 사용법:
     python agent.py
 
 환경 변수 설정:
-    ANTHROPIC_API_KEY  - Anthropic API 키
+    GEMINI_API_KEY     - Google Gemini API 키 (https://aistudio.google.com 에서 무료 발급)
     NOTION_TOKEN       - 노션 인테그레이션 토큰
     NOTION_DATABASE_ID - 노션 데이터베이스 ID (setup_notion.py 실행 후 확인)
 
@@ -22,7 +22,8 @@ import json
 import os
 import sys
 
-import anthropic
+import google.generativeai as genai
+from google.generativeai import protos
 import trafilatura
 from dotenv import load_dotenv
 from rich.console import Console
@@ -35,168 +36,178 @@ load_dotenv()
 console = Console()
 
 # ──────────────────────────────────────────────────────────────────────────────
-# 도구 정의
+# 도구 정의 (Gemini protos 형식)
 # ──────────────────────────────────────────────────────────────────────────────
 
-TOOLS = [
-    {
-        "name": "fetch_article_content",
-        "description": (
-            "URL에서 아티클 내용을 가져옵니다. "
-            "URL이 주어졌을 때 아티클을 저장하기 전에 반드시 먼저 호출해 내용을 확인하세요."
+GEMINI_TOOLS = protos.Tool(
+    function_declarations=[
+        protos.FunctionDeclaration(
+            name="fetch_article_content",
+            description=(
+                "URL에서 아티클 내용을 가져옵니다. "
+                "URL이 주어졌을 때 아티클을 저장하기 전에 반드시 먼저 호출해 내용을 확인하세요."
+            ),
+            parameters=protos.Schema(
+                type_=protos.Type.OBJECT,
+                properties={
+                    "url": protos.Schema(
+                        type_=protos.Type.STRING,
+                        description="내용을 가져올 아티클 URL",
+                    )
+                },
+                required=["url"],
+            ),
         ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "url": {"type": "string", "description": "내용을 가져올 아티클 URL"},
-            },
-            "required": ["url"],
-        },
-    },
-    {
-        "name": "save_article",
-        "description": "공부한 아티클을 노션 데이터베이스에 저장합니다.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "title": {"type": "string", "description": "아티클 제목"},
-                "url": {"type": "string", "description": "아티클 URL (있는 경우)"},
-                "summary": {
-                    "type": "string",
-                    "description": "핵심 내용 한국어 요약 (3~5문장, 구체적으로)",
-                },
-                "key_insights": {
-                    "type": "string",
-                    "description": "핵심 인사이트와 배운 점 (한국어, 불릿 포인트 형식)",
-                },
-                "tags": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": (
-                        "관련 기술/주제 태그 (예: AI, LLM, RAG, Agent, Multimodal, "
-                        "Embedding, VectorDB, Prompt Engineering, Product, Engineering, Research)"
+        protos.FunctionDeclaration(
+            name="save_article",
+            description="공부한 아티클을 노션 데이터베이스에 저장합니다.",
+            parameters=protos.Schema(
+                type_=protos.Type.OBJECT,
+                properties={
+                    "title": protos.Schema(
+                        type_=protos.Type.STRING, description="아티클 제목"
+                    ),
+                    "url": protos.Schema(
+                        type_=protos.Type.STRING, description="아티클 URL (있는 경우)"
+                    ),
+                    "summary": protos.Schema(
+                        type_=protos.Type.STRING,
+                        description="핵심 내용 한국어 요약 (3~5문장, 구체적으로)",
+                    ),
+                    "key_insights": protos.Schema(
+                        type_=protos.Type.STRING,
+                        description="핵심 인사이트와 배운 점 (한국어, 불릿 포인트 형식)",
+                    ),
+                    "tags": protos.Schema(
+                        type_=protos.Type.ARRAY,
+                        items=protos.Schema(type_=protos.Type.STRING),
+                        description=(
+                            "관련 기술/주제 태그 (예: AI, LLM, RAG, Agent, Multimodal, "
+                            "Embedding, VectorDB, Prompt Engineering, Product, Engineering, Research)"
+                        ),
+                    ),
+                    "source": protos.Schema(
+                        type_=protos.Type.STRING,
+                        description="출처 (예: arXiv, Medium, GitHub, HuggingFace Blog)",
+                    ),
+                    "status": protos.Schema(
+                        type_=protos.Type.STRING,
+                        enum=["읽을 예정", "읽는 중", "완료"],
+                        description="읽기 상태. 지금 저장하는 경우 '완료'로 설정",
                     ),
                 },
-                "source": {
-                    "type": "string",
-                    "description": "출처 (예: arXiv, Medium, GitHub, HuggingFace Blog)",
-                },
-                "status": {
-                    "type": "string",
-                    "enum": ["읽을 예정", "읽는 중", "완료"],
-                    "description": "읽기 상태. 지금 저장하는 경우 '완료'로 설정",
-                },
-            },
-            "required": ["title", "summary", "key_insights", "tags"],
-        },
-    },
-    {
-        "name": "save_issue",
-        "description": "해결해야 할 이슈나 과제를 노션 데이터베이스에 저장합니다.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "title": {"type": "string", "description": "이슈 제목 (명확하고 간결하게)"},
-                "description": {
-                    "type": "string",
-                    "description": "이슈 상세 설명 (문제 상황, 영향 범위, 맥락 포함)",
-                },
-                "suggested_actions": {
-                    "type": "string",
-                    "description": "해결을 위한 구체적인 액션 아이템 (한국어, 불릿 포인트 형식)",
-                },
-                "tags": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "관련 기술/주제 태그",
-                },
-                "priority": {
-                    "type": "string",
-                    "enum": ["높음", "중간", "낮음"],
-                    "description": "이슈 우선순위",
-                },
-                "status": {
-                    "type": "string",
-                    "enum": ["대기 중", "진행 중", "해결됨"],
-                    "description": "이슈 현재 상태 (기본값: 대기 중)",
-                },
-            },
-            "required": ["title", "description", "suggested_actions", "tags", "priority"],
-        },
-    },
-    {
-        "name": "search_entries",
-        "description": (
-            "노션 데이터베이스에서 아티클이나 이슈를 검색합니다. "
-            "제목과 태그 기반으로 검색합니다."
+                required=["title", "summary", "key_insights", "tags"],
+            ),
         ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "query": {
-                    "type": "string",
-                    "description": "검색 키워드 (제목 또는 태그명으로 검색)",
-                },
-                "type_filter": {
-                    "type": "string",
-                    "enum": ["아티클", "이슈"],
-                    "description": "타입 필터 (생략 시 전체 검색)",
-                },
-                "status_filter": {
-                    "type": "string",
-                    "description": (
-                        "상태 필터 (아티클: '읽을 예정'|'읽는 중'|'완료', "
-                        "이슈: '대기 중'|'진행 중'|'해결됨')"
+        protos.FunctionDeclaration(
+            name="save_issue",
+            description="해결해야 할 이슈나 과제를 노션 데이터베이스에 저장합니다.",
+            parameters=protos.Schema(
+                type_=protos.Type.OBJECT,
+                properties={
+                    "title": protos.Schema(
+                        type_=protos.Type.STRING, description="이슈 제목 (명확하고 간결하게)"
+                    ),
+                    "description": protos.Schema(
+                        type_=protos.Type.STRING,
+                        description="이슈 상세 설명 (문제 상황, 영향 범위, 맥락 포함)",
+                    ),
+                    "suggested_actions": protos.Schema(
+                        type_=protos.Type.STRING,
+                        description="해결을 위한 구체적인 액션 아이템 (한국어, 불릿 포인트 형식)",
+                    ),
+                    "tags": protos.Schema(
+                        type_=protos.Type.ARRAY,
+                        items=protos.Schema(type_=protos.Type.STRING),
+                        description="관련 기술/주제 태그",
+                    ),
+                    "priority": protos.Schema(
+                        type_=protos.Type.STRING,
+                        enum=["높음", "중간", "낮음"],
+                        description="이슈 우선순위",
+                    ),
+                    "status": protos.Schema(
+                        type_=protos.Type.STRING,
+                        enum=["대기 중", "진행 중", "해결됨"],
+                        description="이슈 현재 상태 (기본값: 대기 중)",
                     ),
                 },
-                "limit": {
-                    "type": "integer",
-                    "description": "최대 결과 수 (기본값: 10)",
+                required=["title", "description", "suggested_actions", "tags", "priority"],
+            ),
+        ),
+        protos.FunctionDeclaration(
+            name="search_entries",
+            description=(
+                "노션 데이터베이스에서 아티클이나 이슈를 검색합니다. "
+                "제목과 태그 기반으로 검색합니다."
+            ),
+            parameters=protos.Schema(
+                type_=protos.Type.OBJECT,
+                properties={
+                    "query": protos.Schema(
+                        type_=protos.Type.STRING,
+                        description="검색 키워드 (제목 또는 태그명으로 검색)",
+                    ),
+                    "type_filter": protos.Schema(
+                        type_=protos.Type.STRING,
+                        enum=["아티클", "이슈"],
+                        description="타입 필터 (생략 시 전체 검색)",
+                    ),
+                    "status_filter": protos.Schema(
+                        type_=protos.Type.STRING,
+                        description=(
+                            "상태 필터 (아티클: '읽을 예정'|'읽는 중'|'완료', "
+                            "이슈: '대기 중'|'진행 중'|'해결됨')"
+                        ),
+                    ),
+                    "limit": protos.Schema(
+                        type_=protos.Type.INTEGER, description="최대 결과 수 (기본값: 10)"
+                    ),
                 },
-            },
-            "required": ["query"],
-        },
-    },
-    {
-        "name": "list_recent_entries",
-        "description": "최근 노션 데이터베이스 항목을 나열합니다.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "type_filter": {
-                    "type": "string",
-                    "enum": ["아티클", "이슈"],
-                    "description": "타입 필터 (생략 시 전체)",
+                required=["query"],
+            ),
+        ),
+        protos.FunctionDeclaration(
+            name="list_recent_entries",
+            description="최근 노션 데이터베이스 항목을 나열합니다.",
+            parameters=protos.Schema(
+                type_=protos.Type.OBJECT,
+                properties={
+                    "type_filter": protos.Schema(
+                        type_=protos.Type.STRING,
+                        enum=["아티클", "이슈"],
+                        description="타입 필터 (생략 시 전체)",
+                    ),
+                    "status_filter": protos.Schema(
+                        type_=protos.Type.STRING, description="상태 필터"
+                    ),
+                    "limit": protos.Schema(
+                        type_=protos.Type.INTEGER, description="최대 항목 수 (기본값: 20)"
+                    ),
                 },
-                "status_filter": {
-                    "type": "string",
-                    "description": "상태 필터",
+            ),
+        ),
+        protos.FunctionDeclaration(
+            name="update_entry_status",
+            description="노션 데이터베이스의 특정 항목 상태를 업데이트합니다.",
+            parameters=protos.Schema(
+                type_=protos.Type.OBJECT,
+                properties={
+                    "page_id": protos.Schema(
+                        type_=protos.Type.STRING, description="업데이트할 노션 페이지 ID"
+                    ),
+                    "status": protos.Schema(
+                        type_=protos.Type.STRING, description="새로운 상태값"
+                    ),
+                    "notes": protos.Schema(
+                        type_=protos.Type.STRING, description="추가 메모 (선택사항)"
+                    ),
                 },
-                "limit": {
-                    "type": "integer",
-                    "description": "최대 항목 수 (기본값: 20)",
-                },
-            },
-            "required": [],
-        },
-    },
-    {
-        "name": "update_entry_status",
-        "description": "노션 데이터베이스의 특정 항목 상태를 업데이트합니다.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "page_id": {
-                    "type": "string",
-                    "description": "업데이트할 노션 페이지 ID",
-                },
-                "status": {"type": "string", "description": "새로운 상태값"},
-                "notes": {"type": "string", "description": "추가 메모 (선택사항)"},
-            },
-            "required": ["page_id", "status"],
-        },
-    },
-]
+                required=["page_id", "status"],
+            ),
+        ),
+    ]
+)
 
 SYSTEM_PROMPT = """당신은 PM의 학습과 업무를 돕는 AI 어시스턴트입니다.
 노션 데이터베이스를 허브로 삼아 AI 관련 아티클과 이슈를 체계적으로 관리합니다.
@@ -236,7 +247,6 @@ def fetch_article_content(url: str) -> str:
                 favor_precision=True,
             )
             if text:
-                # 컨텍스트 윈도우 절약을 위해 8000자로 제한
                 if len(text) > 8000:
                     return text[:8000] + "\n\n[... 내용이 너무 길어 앞부분만 가져왔습니다]"
                 return text
@@ -352,64 +362,52 @@ TOOL_LABEL = {
 
 
 def run_agent_turn(
-    client: anthropic.Anthropic,
+    chat: genai.ChatSession,
     notion: NotionDB,
     user_input: str,
-    history: list,
-) -> list:
-    """사용자 입력 한 턴을 처리하고 대화 히스토리를 반환합니다."""
-    history.append({"role": "user", "content": user_input})
-
+) -> None:
+    """사용자 입력 한 턴을 처리합니다. ChatSession이 히스토리를 자동 관리합니다."""
     console.print()
     console.print("[bold cyan]AI[/bold cyan]: ", end="")
 
+    response = chat.send_message(user_input)
+
     while True:
-        # 스트리밍으로 Claude 응답 수신
-        with client.messages.stream(
-            model="claude-opus-4-6",
-            max_tokens=4096,
-            system=SYSTEM_PROMPT,
-            tools=TOOLS,
-            thinking={"type": "adaptive"},
-            messages=history,
-        ) as stream:
-            for text in stream.text_stream:
-                print(text, end="", flush=True)
-            final_message = stream.get_final_message()
+        # 텍스트 출력
+        for part in response.parts:
+            if hasattr(part, "text") and part.text:
+                print(part.text, end="", flush=True)
 
-        # 대화 히스토리에 추가 (thinking/tool_use 블록 포함 전체 content)
-        history.append({"role": "assistant", "content": final_message.content})
+        # 함수 호출 확인
+        function_calls = [
+            part.function_call
+            for part in response.parts
+            if hasattr(part, "function_call") and part.function_call.name
+        ]
 
-        # 도구 호출이 없으면 종료
-        if final_message.stop_reason != "tool_use":
-            print()  # 줄바꿈
+        if not function_calls:
+            print()
             break
 
         # 도구 실행
-        tool_results = []
-        for block in final_message.content:
-            if not hasattr(block, "type") or block.type != "tool_use":
-                continue
-
-            label = TOOL_LABEL.get(block.name, block.name)
+        function_responses = []
+        for fn in function_calls:
+            label = TOOL_LABEL.get(fn.name, fn.name)
             console.print(f"\n  [dim italic]→ {label}...[/dim italic]")
 
-            result = execute_tool(notion, block.name, block.input)
-            tool_results.append(
-                {
-                    "type": "tool_result",
-                    "tool_use_id": block.id,
-                    "content": result,
-                }
+            result = execute_tool(notion, fn.name, dict(fn.args))
+            function_responses.append(
+                protos.Part(
+                    function_response=protos.FunctionResponse(
+                        name=fn.name,
+                        response={"result": result},
+                    )
+                )
             )
 
-        history.append({"role": "user", "content": tool_results})
-
-        # 도구 결과 반환 후 AI 응답 계속 출력
         print()
         console.print("[bold cyan]AI[/bold cyan]: ", end="")
-
-    return history
+        response = chat.send_message(function_responses)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -420,7 +418,7 @@ def run_agent_turn(
 def check_env() -> bool:
     """필수 환경 변수 확인."""
     missing = []
-    for var in ["ANTHROPIC_API_KEY", "NOTION_TOKEN", "NOTION_DATABASE_ID"]:
+    for var in ["GEMINI_API_KEY", "NOTION_TOKEN", "NOTION_DATABASE_ID"]:
         if not os.environ.get(var):
             missing.append(var)
 
@@ -432,6 +430,7 @@ def check_env() -> bool:
                 + "\n".join(f"  • {v}" for v in missing)
                 + "\n\n"
                 f"[dim].env 파일을 확인하세요.\n"
+                f"Gemini API 키: https://aistudio.google.com (무료, 카드 불필요)\n"
                 f"처음 설정하는 경우: python setup_notion.py[/dim]",
                 style="red",
             )
@@ -450,7 +449,13 @@ def main():
         console.print(f"[red]오류: {e}[/red]")
         sys.exit(1)
 
-    client = anthropic.Anthropic()
+    genai.configure(api_key=os.environ.get("GEMINI_API_KEY"))
+    model = genai.GenerativeModel(
+        model_name="gemini-2.0-flash",
+        tools=[GEMINI_TOOLS],
+        system_instruction=SYSTEM_PROMPT,
+    )
+    chat = model.start_chat()
 
     console.print()
     console.print(
@@ -467,8 +472,6 @@ def main():
         )
     )
 
-    history: list = []
-
     while True:
         try:
             console.print()
@@ -481,13 +484,11 @@ def main():
                 console.print("\n[dim]안녕히 가세요! 👋[/dim]")
                 break
 
-            history = run_agent_turn(client, notion, user_input, history)
+            run_agent_turn(chat, notion, user_input)
 
         except KeyboardInterrupt:
             console.print("\n[dim]안녕히 가세요! 👋[/dim]")
             break
-        except anthropic.APIError as e:
-            console.print(f"\n[red]API 오류: {e}[/red]")
         except Exception as e:
             console.print(f"\n[red]오류: {e}[/red]")
 
