@@ -1,108 +1,80 @@
 # Learning Tracker Agent
 
-최신 기술 트렌드에 대한 소스(url/텍스트/PDF)를 수집·요약해서 Notion DB에 업로드하는 자동화 프로젝트
+리포지토리에 URL/PDF/텍스트를 넣고 배치로 요약해 Notion DB에 저장하는 자동화 프로젝트입니다.
 
-## 개요
+## 현재 운영 기준 (v2)
 
-* 입력: Telegram(모바일 공유)
-* 처리:
+- **입력**: `inputs/` 폴더(또는 GitHub 이슈/코멘트 기반 경로)
+- **실행**: GitHub Actions 스케줄 또는 로컬 에이전트 실행
+- **요약 모델**: Codex/Claude/Gemini 중 선택
+- **저장**: Notion DB (`title / summary / key_insights / tags / source`)
+- **중복 방지**: URL 기준 `url_exists` 검사
 
-  * URL: `trafilatura`로 본문 추출
-  * PDF: `pypdf`로 텍스트 추출
-  * TEXT: 원문 사용
-* 요약: Gemini, JSON 스키마 기반 구조화 출력
-* 저장: Notion DB에 `title / summary / key_insights / tags / source` 형태로 저장, 링크 반환
-* 중복 방지: URL 기준 중복 저장(`url_exists`)
+상세 운영 가이드:
+- `docs/codex-claude-notion-automation.md`
 
-## 구조
+---
+
+## 권장 처리 흐름
 
 ```text
-Telegram Bot → Input Router(url/text/pdf)
-→ (trafilatura / pypdf / raw text)
-→ Gemini Summarizer(JSON)
+Repo Inputs(url/pdf/text)
+→ Extractor(trafilatura / pypdf / raw text)
+→ LLM Provider(Codex/Claude/Gemini)
+→ Structured JSON
 → NotionDB.add_article()
 → Notion Learning Database
 ```
 
-## 구성 파일
+---
 
-* `telegram_bot.py`: `/start`, URL/텍스트/PDF 처리, 실패 안내, Notion 저장
-* `notion_db.py`: Notion CRUD, 아티클/이슈 저장, URL 중복 검사
-* `agent.py`: CLI 기반 워크플로우
-* `newsletter.py`: RSS/이메일 기반 자동 수집 파이프라인
-* `TELEGRAM_BOT.md`, `.env.example`, `requirements.txt`
-
-## 실행
+## 빠른 시작
 
 ```bash
 pip install -r requirements.txt
 ```
 
-`.env`
+### 환경 변수
 
 ```env
-GEMINI_API_KEY=...
 NOTION_TOKEN=...
 NOTION_DATABASE_ID=...
-TELEGRAM_BOT_TOKEN=...
+# 모델 공급자에 따라 1개 이상 사용
+GEMINI_API_KEY=...
+OPENAI_API_KEY=...
+ANTHROPIC_API_KEY=...
 ```
 
-```bash
-python telegram_bot.py
-```
+### 실행 방식
 
-## 배포(Railway)
+1. `inputs/`에 URL 목록 또는 PDF 추가
+2. 로컬 실행 또는 GitHub Actions 실행
+3. 결과가 Notion DB에 적재되는지 확인
 
-Telegram 봇만 운영 시 변수 4개:
-`GEMINI_API_KEY`, `NOTION_TOKEN`, `NOTION_DATABASE_ID`, `TELEGRAM_BOT_TOKEN`
-Start Command: `python telegram_bot.py`
+GitHub Actions 예시는 아래 문서의 워크플로우 섹션 참고:
+- `docs/codex-claude-notion-automation.md`
 
-## 한계
+---
 
-* 스캔 PDF는 텍스트 추출 실패 가능
-* 로그인/권한 필요한 페이지는 본문 추출 실패 가능
-* polling 방식이라 상시 프로세스 운영 필요
-* API quota 소진 시 요약 지연/실패 가능
+## 주요 파일
 
-## 로드맵
+- `agent.py`: CLI 기반 워크플로우
+- `notion_db.py`: Notion CRUD, 아티클/이슈 저장, URL 중복 검사
+- `newsletter.py`: RSS/이메일 기반 자동 수집 파이프라인
+- `docs/codex-claude-notion-automation.md`: v2 운영/배포/비용/만료 대응 가이드
 
-* OCR fallback
-* 입력 실패 재시도/대체 경로 안내 강화
-* 태그 정규화 + 유사 문서 클러스터링
-* 주간 학습 리포트 자동 생성
-* 학습량/주제/완료율 대시보드
+---
 
-## Codex/Claude Code 연동 아이디어
+## 운영 체크포인트
 
-Gemini API 대신, 현재 작업 중인 리포지토리에서 URL/PDF를 바로 처리하고 결과를 Notion DB로 적재하는 방식도 가능합니다.
+- 스캔 PDF 대비 OCR fallback 고려
+- LLM별 응답 포맷 차이는 provider 레이어에서 흡수
+- Notion API rate limit 대비 retry/backoff 적용
+- API 키/토큰은 GitHub Secrets로 관리
 
-### 추천 아키텍처
+---
 
-1. **입력 수집(리포 기반)**
-   * `inputs/` 폴더에 URL 목록(`.md`/`.txt`) 또는 PDF 파일을 추가
-   * 또는 GitHub Issue/PR 코멘트로 URL/PDF 경로를 전달
+## 레거시(v1) 참고
 
-2. **실행 트리거**
-   * Codex/Claude Code를 로컬에서 실행하거나 CI(GitHub Actions)에서 실행
-   * 예: `python agent.py --source inputs/ --llm_provider anthropic`
-
-3. **요약 생성(LLM Provider 교체)**
-   * 기존 `summarize_with_gemini()`를 provider 인터페이스로 분리
-   * `GeminiProvider`, `OpenAIProvider(Codex)`, `AnthropicProvider(Claude)` 구현
-   * 동일 JSON 스키마를 강제해 Notion 스키마와 호환 유지
-
-4. **Notion 적재**
-   * 현재 `notion_db.py`의 `add_article()`를 재사용
-   * URL 중복 검사(`url_exists`)는 그대로 유지
-
-### 장점
-
-* 리포지토리 중심 워크플로우(문서 버전관리 + 자동화) 가능
-* 특정 모델에 락인되지 않고 공급자 교체 가능
-* CI에서 정기 실행 시 주간/일간 배치 처리에 유리
-
-### 구현 시 체크포인트
-
-* PDF는 스캔본 대비 OCR fallback 필요
-* LLM별 응답 포맷 차이를 provider 레이어에서 흡수
-* Notion API rate limit 대비 재시도(backoff) 적용 권장
+Telegram Bot + Gemini 상시 실행 방식은 레거시로 남아 있으며, 필요 시 아래 문서를 참고하세요.
+- `TELEGRAM_BOT.md`
