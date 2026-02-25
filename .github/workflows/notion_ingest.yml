@@ -1,0 +1,46 @@
+name: Notion Batch Ingest
+
+on:
+  workflow_dispatch:
+    inputs:
+      provider:
+        description: "LLM provider (gemini/openai/anthropic)"
+        required: false
+        default: "gemini"
+      model:
+        description: "Optional model name override"
+        required: false
+        default: ""
+  schedule:
+    - cron: "0 0 * * *" # UTC daily
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install deps
+        run: pip install -r requirements.txt
+
+      - name: Run batch ingest
+        env:
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+          NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          PROVIDER="${{ github.event.inputs.provider || 'gemini' }}"
+          MODEL="${{ github.event.inputs.model || '' }}"
+          if [ -n "$MODEL" ]; then
+            python batch_ingest.py --inputs-dir inputs --provider "$PROVIDER" --model "$MODEL"
+          else
+            python batch_ingest.py --inputs-dir inputs --provider "$PROVIDER"
+          fi

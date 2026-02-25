@@ -106,3 +106,68 @@ Gemini API 대신, 현재 작업 중인 리포지토리에서 URL/PDF를 바로 
 * PDF는 스캔본 대비 OCR fallback 필요
 * LLM별 응답 포맷 차이를 provider 레이어에서 흡수
 * Notion API rate limit 대비 재시도(backoff) 적용 권장
+
+## 리포 기반 요약 자동화 (Codex/Claude Code + GitHub Actions)
+
+Gemini 고정이 아니라, **같은 리포에서 URL/PDF를 추가하고 배치 실행**해서 Notion에 저장할 수 있습니다.
+
+### 1) 입력 방식
+
+`inputs/` 폴더에 파일을 넣습니다.
+
+- `*.md`, `*.txt`, `*.url`
+  - 첫 줄이 URL이면 해당 링크 본문을 가져와 요약
+  - 아니면 파일 전체 텍스트를 요약
+- `*.pdf`
+  - PDF 텍스트를 추출해 요약
+
+### 2) 로컬 실행
+
+```bash
+python batch_ingest.py --inputs-dir inputs --provider gemini
+python batch_ingest.py --inputs-dir inputs --provider openai --model gpt-5-mini
+python batch_ingest.py --inputs-dir inputs --provider anthropic --model claude-3-5-sonnet-latest
+```
+
+필수 env:
+
+```env
+NOTION_TOKEN=...
+NOTION_DATABASE_ID=...
+```
+
+provider별 추가 env:
+
+```env
+# provider=gemini
+GEMINI_API_KEY=...
+
+# provider=openai
+OPENAI_API_KEY=...
+
+# provider=anthropic
+ANTHROPIC_API_KEY=...
+```
+
+### 3) GitHub Actions로 무중단 자동화(유료 서버 불필요)
+
+`.github/workflows/notion_ingest.yml`이 아래 트리거를 제공합니다.
+
+- `schedule`: 매일 1회(UTC 00:00)
+- `workflow_dispatch`: 수동 실행 + provider/model 선택
+
+설정 방법:
+
+1. GitHub Repository → Settings → Secrets and variables → Actions
+2. 아래 Secret 등록
+   - `NOTION_TOKEN`, `NOTION_DATABASE_ID`
+   - 사용 provider에 맞게 `GEMINI_API_KEY` 또는 `OPENAI_API_KEY` 또는 `ANTHROPIC_API_KEY`
+3. `inputs/`에 URL/PDF/텍스트를 커밋
+4. Actions에서 `Notion Batch Ingest` 실행
+
+### 4) 중복 방지
+
+- URL 입력은 기존 `url_exists()`로 중복 저장 방지
+- 텍스트/PDF 입력은 본문 해시(`repo-hash:...`) 태그로 재처리 방지
+
+> 참고: GitHub Actions 자체 만료는 아니고, API 키 만료/회전만 관리하면 장기간 운영 가능합니다.
