@@ -71,3 +71,12 @@ Start Command: `python telegram_bot.py`
 * 태그 정규화 + 유사 문서 클러스터링
 * 주간 학습 리포트 자동 생성
 * 학습량/주제/완료율 대시보드
+
+## Codex/Claude Code 연동
+
+리포지토리 기반 요약/적재 파이프라인은 별도 문서에서 확인하세요.
+
+- 상세 가이드: [docs/repo_ingest.md](docs/repo_ingest.md)
+- 실행 스크립트: `repo_ingest.py`
+- CI 워크플로우: `.github/workflows/repo_ingest.yml`
+
