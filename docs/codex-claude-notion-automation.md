@@ -69,7 +69,7 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           # 또는 OPENAI_API_KEY / ANTHROPIC_API_KEY
         run: |
-          python agent.py
+          python repo_ingest.py --input-dir inputs --provider "${LLM_PROVIDER:-gemini}"
 ```
 
 ## 만료/운영 안정성 체크리스트

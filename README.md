@@ -1,30 +1,14 @@
 # Learning Tracker Agent
 
-리포지토리에 URL/PDF/텍스트를 넣고 배치로 요약해 Notion DB에 저장하는 자동화 프로젝트입니다.
+리포지토리에 URL/PDF/텍스트를 넣고, 배치로 요약해서 Notion DB에 저장하는 프로젝트입니다.
 
-## 현재 운영 기준 (v2)
+## 지금 기준(권장) 워크플로우
 
-- **입력**: `inputs/` 폴더(또는 GitHub 이슈/코멘트 기반 경로)
-- **실행**: GitHub Actions 스케줄 또는 로컬 에이전트 실행
-- **요약 모델**: Codex/Claude/Gemini 중 선택
-- **저장**: Notion DB (`title / summary / key_insights / tags / source`)
-- **중복 방지**: URL 기준 `url_exists` 검사
-
-상세 운영 가이드:
-- `docs/codex-claude-notion-automation.md`
-
----
-
-## 권장 처리 흐름
-
-```text
-Repo Inputs(url/pdf/text)
-→ Extractor(trafilatura / pypdf / raw text)
-→ LLM Provider(Codex/Claude/Gemini)
-→ Structured JSON
-→ NotionDB.add_article()
-→ Notion Learning Database
-```
+1. `inputs/` 폴더에 URL 목록(`.txt`/`.md`) 또는 PDF를 넣음
+2. `repo_ingest.py` 실행
+3. LLM(Codex/OpenAI, Claude, Gemini)로 요약 JSON 생성
+4. Notion DB에 저장 (`title / summary / key_insights / tags / source`)
+5. URL은 `url_exists`로 중복 저장 방지
 
 ---
 
@@ -34,47 +18,55 @@ Repo Inputs(url/pdf/text)
 pip install -r requirements.txt
 ```
 
-### 환경 변수
+`.env` 예시:
 
 ```env
 NOTION_TOKEN=...
 NOTION_DATABASE_ID=...
-# 모델 공급자에 따라 1개 이상 사용
+
+# 공급자 선택 (gemini/openai/anthropic)
+LLM_PROVIDER=openai
+
+# 선택한 공급자 키
 GEMINI_API_KEY=...
 OPENAI_API_KEY=...
 ANTHROPIC_API_KEY=...
 ```
 
-### 실행 방식
+실행:
 
-1. `inputs/`에 URL 목록 또는 PDF 추가
-2. 로컬 실행 또는 GitHub Actions 실행
-3. 결과가 Notion DB에 적재되는지 확인
+```bash
+python repo_ingest.py --input-dir inputs --provider openai
+```
 
-GitHub Actions 예시는 아래 문서의 워크플로우 섹션 참고:
-- `docs/codex-claude-notion-automation.md`
+> `--provider`를 생략하면 `LLM_PROVIDER`를 사용하고, 둘 다 없으면 `gemini`를 기본값으로 사용합니다.
+
+---
+
+## GitHub Actions (유료 서버 없이 스케줄 실행)
+
+워크플로우 파일:
+- `.github/workflows/notion-ingest.yml`
+
+필수 GitHub Secrets:
+- `NOTION_TOKEN`
+- `NOTION_DATABASE_ID`
+- `LLM_PROVIDER` (`gemini` / `openai` / `anthropic`)
+- 공급자별 API Key (`GEMINI_API_KEY` 또는 `OPENAI_API_KEY` 또는 `ANTHROPIC_API_KEY`)
 
 ---
 
 ## 주요 파일
 
-- `agent.py`: CLI 기반 워크플로우
-- `notion_db.py`: Notion CRUD, 아티클/이슈 저장, URL 중복 검사
-- `newsletter.py`: RSS/이메일 기반 자동 수집 파이프라인
-- `docs/codex-claude-notion-automation.md`: v2 운영/배포/비용/만료 대응 가이드
+- `repo_ingest.py`: 리포 입력 기반 배치 요약 + Notion 적재 엔트리포인트
+- `notion_db.py`: Notion CRUD, URL 중복 검사
+- `.github/workflows/notion-ingest.yml`: 스케줄/수동 실행 워크플로우
+- `docs/codex-claude-notion-automation.md`: 운영 가이드
 
 ---
 
-## 운영 체크포인트
+## 레거시 참고
 
-- 스캔 PDF 대비 OCR fallback 고려
-- LLM별 응답 포맷 차이는 provider 레이어에서 흡수
-- Notion API rate limit 대비 retry/backoff 적용
-- API 키/토큰은 GitHub Secrets로 관리
-
----
-
-## 레거시(v1) 참고
-
-Telegram Bot + Gemini 상시 실행 방식은 레거시로 남아 있으며, 필요 시 아래 문서를 참고하세요.
+Telegram Bot 기반(v1) 방식은 레거시로 유지됩니다.
+- `telegram_bot.py`
 - `TELEGRAM_BOT.md`
