@@ -1,7 +1,7 @@
 """Repository-driven ingest pipeline for Learning Tracker.
 
 - Reads URLs / text / PDF files from an input directory.
-- Summarizes with selectable LLM provider (gemini/openai/anthropic).
+- Summarizes with selectable LLM provider (gemini/claude_cli).
 - Stores normalized records into Notion DB.
 """
 
@@ -12,6 +12,7 @@ import io
 import json
 import os
 import re
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
@@ -57,6 +58,10 @@ class Provider:
     def summarize(self, title: str, url: str, article_text: str) -> dict:
         raise NotImplementedError
 
+    @property
+    def name(self) -> str:
+        return self.__class__.__name__.replace("Provider", "").lower()
+
 
 class GeminiProvider(Provider):
     def __init__(self):
@@ -77,50 +82,44 @@ class GeminiProvider(Provider):
         return parse_json_response(text)
 
 
-class OpenAIProvider(Provider):
+class ClaudeCliProvider(Provider):
     def __init__(self):
-        from openai import OpenAI
-
-        api_key = os.environ.get("OPENAI_API_KEY")
-        if not api_key:
-            raise EnvironmentError("OPENAI_API_KEY is required for openai provider")
-        self.client = OpenAI(api_key=api_key)
-        self.model = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
+        self.command = os.environ.get("CLAUDE_CLI_COMMAND", "claude")
+        self.model = os.environ.get("CLAUDE_CLI_MODEL", "")
+        self.timeout_s = int(os.environ.get("CLAUDE_CLI_TIMEOUT_S", "180"))
 
     def summarize(self, title: str, url: str, article_text: str) -> dict:
-        prompt = f"title: {title}\nurl: {url}\narticle_text:\n{article_text}"
-        resp = self.client.chat.completions.create(
-            model=self.model,
-            response_format={"type": "json_object"},
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": prompt},
-            ],
+        prompt = (
+            f"{SYSTEM_PROMPT}\n\n"
+            f"title: {title}\n"
+            f"url: {url}\n"
+            f"article_text:\n{article_text}\n"
         )
-        text = (resp.choices[0].message.content or "").strip()
-        return parse_json_response(text)
+        cmd = [self.command, "-p", prompt]
+        if self.model:
+            cmd.extend(["--model", self.model])
 
+        try:
+            proc = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=self.timeout_s,
+                check=False,
+            )
+        except FileNotFoundError as exc:
+            raise EnvironmentError(
+                f"Claude CLI command not found: {self.command}. Install Claude Code CLI first."
+            ) from exc
 
-class AnthropicProvider(Provider):
-    def __init__(self):
-        import anthropic
+        if proc.returncode != 0:
+            stderr = (proc.stderr or "").strip()
+            raise RuntimeError(f"claude CLI failed (code={proc.returncode}): {stderr}")
 
-        api_key = os.environ.get("ANTHROPIC_API_KEY")
-        if not api_key:
-            raise EnvironmentError("ANTHROPIC_API_KEY is required for anthropic provider")
-        self.client = anthropic.Anthropic(api_key=api_key)
-        self.model = os.environ.get("ANTHROPIC_MODEL", "claude-3-5-sonnet-latest")
-
-    def summarize(self, title: str, url: str, article_text: str) -> dict:
-        prompt = f"title: {title}\nurl: {url}\narticle_text:\n{article_text}"
-        msg = self.client.messages.create(
-            model=self.model,
-            max_tokens=1200,
-            system=SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        text_blocks = [b.text for b in msg.content if getattr(b, "type", "") == "text"]
-        return parse_json_response("\n".join(text_blocks).strip())
+        output = (proc.stdout or "").strip()
+        if not output:
+            raise RuntimeError("claude CLI returned empty output")
+        return parse_json_response(output)
 
 
 def parse_json_response(text: str) -> dict:
@@ -132,14 +131,41 @@ def parse_json_response(text: str) -> dict:
 
 
 def choose_provider(name: str) -> Provider:
-    name = name.lower().strip()
-    if name == "gemini":
+    normalized = name.lower().strip()
+    if normalized == "gemini":
         return GeminiProvider()
-    if name == "openai":
-        return OpenAIProvider()
-    if name == "anthropic":
-        return AnthropicProvider()
+    if normalized == "claude_cli":
+        return ClaudeCliProvider()
     raise ValueError(f"Unsupported provider: {name}")
+
+
+def build_provider_chain(chain: str) -> list[Provider]:
+    providers: list[Provider] = []
+    for raw_name in [token.strip() for token in chain.split(",") if token.strip()]:
+        try:
+            providers.append(choose_provider(raw_name))
+        except EnvironmentError as exc:
+            print(f"[WARN] provider unavailable ({raw_name}): {exc}")
+    if not providers:
+        raise EnvironmentError(
+            "No available providers in chain. Configure GEMINI_API_KEY or Claude CLI."
+        )
+    return providers
+
+
+def summarize_with_fallback(
+    providers: list[Provider], title: str, url: str, article_text: str
+) -> dict:
+    last_exc: Exception | None = None
+    for provider in providers:
+        try:
+            result = provider.summarize(title, url, article_text)
+            result["_provider"] = provider.name
+            return result
+        except Exception as exc:  # noqa: BLE001
+            last_exc = exc
+            print(f"[WARN] summarize failed on {provider.name}: {exc}")
+    raise RuntimeError(f"All providers failed. last_error={last_exc}")
 
 
 def truncate(text: str, limit: int = 10000) -> str:
@@ -213,14 +239,30 @@ def main() -> None:
 
     parser = argparse.ArgumentParser(description="Repository-driven Notion ingest runner")
     parser.add_argument("--input-dir", default="inputs", help="input directory path")
-    parser.add_argument("--provider", default=os.environ.get("LLM_PROVIDER", "gemini"))
+    parser.add_argument(
+        "--provider",
+        default=os.environ.get("LLM_PROVIDER", "auto"),
+        help="gemini/claude_cli/auto",
+    )
+    parser.add_argument(
+        "--provider-chain",
+        default=os.environ.get("LLM_PROVIDER_CHAIN", "gemini,claude_cli"),
+        help="Fallback order when --provider auto is used",
+    )
     args = parser.parse_args()
 
     input_dir = Path(args.input_dir)
     if not input_dir.exists():
         raise FileNotFoundError(f"Input directory not found: {input_dir}")
 
-    provider = choose_provider(args.provider)
+    provider_name = args.provider.lower().strip()
+    if provider_name == "auto":
+        providers = build_provider_chain(args.provider_chain)
+    else:
+        providers = [choose_provider(provider_name)]
+
+    provider_label = ", ".join(provider.name for provider in providers)
+    print(f"Using provider(s): {provider_label}")
     notion = NotionDB()
 
     processed = 0
@@ -234,7 +276,7 @@ def main() -> None:
                 print(f"[SKIP] already exists: {item.url}")
                 continue
 
-            structured = provider.summarize(item.title, item.url, item.content)
+            structured = summarize_with_fallback(providers, item.title, item.url, item.content)
             res = notion.add_article(
                 title=structured.get("title", item.title),
                 url=item.url,
@@ -245,7 +287,10 @@ def main() -> None:
                 status="완료",
             )
             processed += 1
-            print(f"[OK] {structured.get('title', item.title)} -> {res['notion_url']}")
+            used_provider = structured.get("_provider", provider_label)
+            print(
+                f"[OK] ({used_provider}) {structured.get('title', item.title)} -> {res['notion_url']}"
+            )
         except Exception as exc:
             failed += 1
             print(f"[FAIL] {item.title}: {exc}")
