@@ -18,11 +18,13 @@ Gemini API 고정 구조 대신, **리포지토리 기반 입력(URL/PDF)** + **
 
 ## LLM 공급자 전략
 
-`repo_ingest.py`에서 공급자 인터페이스를 두고 모델을 교체 가능하게 운영합니다.
+`repo_ingest.py`에서 공급자 인터페이스를 두고 모델을 교체하거나, `auto` 모드로 무료 티어 우선 폴백 라우팅을 사용할 수 있습니다.
 
 - `GeminiProvider`
-- `OpenAIProvider` (Codex 계열 API 사용 시)
-- `AnthropicProvider` (Claude 사용 시)
+- `ClaudeCliProvider` (로컬 Claude Code CLI + Claude Pro 구독)
+- `auto` 모드: `LLM_PROVIDER_CHAIN` 순서대로 실패 시 다음 공급자로 자동 전환
+  - 기본값: `gemini,claude_cli`
+  - 예시: Gemini 우선, 실패/쿼터 초과 시 Claude Pro CLI로 폴백
 
 반환 스키마는 현재 Notion 저장 구조(`title / summary / key_insights / tags / source`)를 유지합니다.
 
@@ -68,10 +70,9 @@ jobs:
           NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
           LLM_PROVIDER: ${{ secrets.LLM_PROVIDER }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Claude CLI 기반 폴백은 로컬/셀프호스팅 러너에서 권장
         run: |
-          python repo_ingest.py --input-dir inputs --provider "${LLM_PROVIDER:-gemini}"
+          python repo_ingest.py --input-dir inputs --provider "${LLM_PROVIDER:-auto}" --provider-chain "${LLM_PROVIDER_CHAIN:-gemini,claude_cli}"
 ```
 
 ## 만료/운영 안정성 체크리스트
@@ -94,7 +95,7 @@ jobs:
 ## 비용 관점
 
 - 서버 비용: 0원 (GitHub Actions 무료 한도 내)
-- 모델 비용: 사용한 API 과금 정책에 따름
+- 모델 비용: Gemini API + Claude Pro 구독 범위 내에서 운영 가능 (추가 API 과금 회피)
 - Notion API 자체는 일반적으로 별도 사용료 없이 통합 가능
 
 즉, "유료 서버 없이"는 충분히 가능하고,

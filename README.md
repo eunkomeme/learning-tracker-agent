@@ -84,11 +84,11 @@ Git 커밋 자체가 인풋 트리거가 된다. 별도의 웹 UI나 API 없이 
 
 ### 2. LLM 멀티 프로바이더 지원
 
-Gemini, OpenAI, Anthropic 중 하나를 환경변수로 교체할 수 있도록 설계했다.
+Gemini API와 Claude Pro(Claude Code CLI)를 환경변수로 교체/폴백할 수 있도록 설계했다.
 
 - **이유**: 특정 API에 종속되지 않고, 비용과 성능을 직접 비교하기 위해
 - **트레이드오프**: 구현 복잡도 증가 vs. 공급자 유연성
-- 현재 기본값은 `gemini-2.0-flash` (비용 대비 성능 효율)
+- 현재 기본값은 `LLM_PROVIDER=auto` + `LLM_PROVIDER_CHAIN=gemini,claude_cli` (Gemini 우선 + Claude Pro CLI 폴백)
 
 ### 3. URL 중복 방지를 DB 쿼리로 처리
 
@@ -136,7 +136,7 @@ Notion에 저장되는 필드:
 
 ## 빠른 시작
 
-**전제 조건**: Python 3.11+, Notion API 토큰, LLM API 키 (Gemini / OpenAI / Anthropic 중 하나)
+**전제 조건**: Python 3.11+, Notion API 토큰, Gemini API 키 또는 Claude Code CLI 로그인 상태
 
 **설치 및 실행:**
 
@@ -149,12 +149,14 @@ pip install -r requirements.txt
 ```env
 NOTION_TOKEN=...
 NOTION_DATABASE_ID=...
-LLM_PROVIDER=gemini          # gemini / openai / anthropic
-GEMINI_API_KEY=...           # 선택한 공급자의 키만 필요
+LLM_PROVIDER=auto            # auto / gemini / claude_cli
+LLM_PROVIDER_CHAIN=gemini,claude_cli  # auto일 때 폴백 순서
+GEMINI_API_KEY=...           # Gemini 사용 시
+CLAUDE_CLI_COMMAND=claude    # Claude Code CLI 실행 파일 (기본: claude)
 ```
 
 ```bash
-python repo_ingest.py --input-dir inputs --provider gemini
+python repo_ingest.py --input-dir inputs --provider auto --provider-chain gemini,claude_cli
 ```
 
 **GitHub Actions 자동화 설정:**
@@ -166,8 +168,8 @@ python repo_ingest.py --input-dir inputs --provider gemini
 |------------|------|
 | `NOTION_TOKEN` | Notion 통합 토큰 |
 | `NOTION_DATABASE_ID` | 저장할 Notion DB ID |
-| `LLM_PROVIDER` | `gemini` / `openai` / `anthropic` |
-| `GEMINI_API_KEY` 등 | 선택한 공급자의 API 키 |
+| `LLM_PROVIDER` | `auto` / `gemini` / `claude_cli` |
+| `GEMINI_API_KEY` / `CLAUDE_CLI_COMMAND` | Gemini 키 또는 Claude CLI 실행 설정 |
 
 ---
 
