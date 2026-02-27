@@ -18,6 +18,47 @@ def _to_rich_text(text: str) -> list:
     return chunks
 
 
+def _to_page_blocks(summary: str, key_insights: str, item_type: str = "아티클") -> list:
+    """Summary와 Key Insights를 노션 페이지 블록으로 변환합니다."""
+    blocks = []
+
+    if summary:
+        blocks.append({
+            "object": "block",
+            "type": "callout",
+            "callout": {
+                "rich_text": [{"type": "text", "text": {"content": summary[:2000]}}],
+                "icon": {"emoji": "📝"},
+                "color": "gray_background",
+            },
+        })
+
+    if key_insights:
+        blocks.append({"object": "block", "type": "divider", "divider": {}})
+
+        label = "주요 인사이트" if item_type == "아티클" else "해결 방안"
+        blocks.append({
+            "object": "block",
+            "type": "heading_2",
+            "heading_2": {
+                "rich_text": [{"type": "text", "text": {"content": label}}],
+            },
+        })
+
+        for line in key_insights.strip().split("\n"):
+            text = line.strip().lstrip("-").lstrip("•").strip()
+            if text:
+                blocks.append({
+                    "object": "block",
+                    "type": "bulleted_list_item",
+                    "bulleted_list_item": {
+                        "rich_text": [{"type": "text", "text": {"content": text[:2000]}}],
+                    },
+                })
+
+    return blocks
+
+
 def _from_rich_text(prop: dict) -> str:
     """노션 rich_text 속성에서 텍스트를 추출합니다."""
     if prop and prop.get("rich_text"):
@@ -64,8 +105,6 @@ def _format_page(page: dict) -> dict:
         "status": _from_select(props.get("Status", {})),
         "priority": _from_select(props.get("Priority", {})),
         "tags": _from_multi_select(props.get("Tags", {})),
-        "summary": _from_rich_text(props.get("Summary", {})),
-        "key_insights": _from_rich_text(props.get("Key Insights", {})),
         "url": _from_url(props.get("URL", {})),
         "source": _from_rich_text(props.get("Source", {})),
         "notes": _from_rich_text(props.get("Notes", {})),
@@ -109,8 +148,6 @@ class NotionDB:
             "Type": {"select": {"name": "아티클"}},
             "Status": {"select": {"name": status}},
             "Tags": {"multi_select": [{"name": tag} for tag in tags]},
-            "Summary": {"rich_text": _to_rich_text(summary)},
-            "Key Insights": {"rich_text": _to_rich_text(key_insights)},
         }
         if url:
             properties["URL"] = {"url": url}
@@ -120,6 +157,7 @@ class NotionDB:
         page = self.client.pages.create(
             parent={"database_id": self.db_id},
             properties=properties,
+            children=_to_page_blocks(summary, key_insights, "아티클"),
         )
         return {"page_id": page["id"], "notion_url": page["url"]}
 
@@ -139,13 +177,12 @@ class NotionDB:
             "Status": {"select": {"name": status}},
             "Priority": {"select": {"name": priority}},
             "Tags": {"multi_select": [{"name": tag} for tag in tags]},
-            "Summary": {"rich_text": _to_rich_text(description)},
-            "Key Insights": {"rich_text": _to_rich_text(suggested_actions)},
         }
 
         page = self.client.pages.create(
             parent={"database_id": self.db_id},
             properties=properties,
+            children=_to_page_blocks(description, suggested_actions, "이슈"),
         )
         return {"page_id": page["id"], "notion_url": page["url"]}
 
