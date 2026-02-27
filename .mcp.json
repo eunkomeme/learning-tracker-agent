@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "learning-tracker": {
+      "type": "stdio",
+      "command": "python3",
+      "args": ["/home/user/learning-tracker-agent/mcp_server.py"],
+      "env": {}
+    }
+  }
+}
