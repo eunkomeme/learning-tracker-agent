@@ -72,11 +72,11 @@ GEMINI_TOOLS = protos.Tool(
                     ),
                     "summary": protos.Schema(
                         type_=protos.Type.STRING,
-                        description="핵심 내용 한국어 요약 (3~5문장, 구체적으로)",
+                        description="문제·해결방향 1~2문장 + 핵심 개념 bullet (∙ 개념명: 설명), 줄바꿈은 \\n으로",
                     ),
                     "key_insights": protos.Schema(
                         type_=protos.Type.STRING,
-                        description="핵심 인사이트와 배운 점 (한국어, 불릿 포인트 형식)",
+                        description="PM이 꼭 알아야 할 점: 협업·설계 철학 관점 실용 인사이트 2~3단락, bullet 아닌 자연스러운 문장으로 \\n\\n으로 단락 구분",
                     ),
                     "tags": protos.Schema(
                         type_=protos.Type.ARRAY,
@@ -210,10 +210,10 @@ GEMINI_TOOLS = protos.Tool(
 )
 
 SYSTEM_PROMPT = """당신은 PM의 학습과 업무를 돕는 AI 어시스턴트입니다.
-노션 데이터베이스를 허브로 삼아 AI 관련 아티클과 이슈를 체계적으로 관리합니다.
+노션 데이터베이스를 허브로 삼아 AI/테크 아티클과 이슈를 체계적으로 관리합니다.
 
 **주요 역할:**
-1. **아티클 저장**: URL이나 아티클 내용이 주어지면, 핵심 내용을 한국어로 요약하고 인사이트를 추출해 노션에 저장
+1. **아티클 저장**: URL이나 아티클 내용이 주어지면, 핵심 내용을 PM 관점으로 정리해 노션에 저장
 2. **이슈 등록**: 해결해야 할 문제가 주어지면, 구조화하고 액션 아이템을 제안해 저장
 3. **검색 및 조회**: 과거 학습 내용이나 이슈를 검색하고 요약
 
@@ -221,8 +221,9 @@ SYSTEM_PROMPT = """당신은 PM의 학습과 업무를 돕는 AI 어시스턴트
 - URL이 주어지면: fetch_article_content 먼저 호출 → 내용 기반으로 save_article 호출
 - 문제/이슈가 언급되면: save_issue로 구조화해 저장
 - 조회 요청 시: search_entries 또는 list_recent_entries 사용
-- 요약과 인사이트는 항상 한국어로, 명확하고 실용적으로 작성
-- 태그는 내용에 맞는 기술/주제 키워드 사용 (AI, LLM, RAG, Agent, Multimodal, Embedding, VectorDB, Prompt Engineering, Product, Engineering, Research 등)
+- summary: 문제/해결방향 1~2문장 + 핵심 개념 "∙ 개념명: 설명" bullet 2~4개 형식으로
+- key_insights: "PM이 꼭 알아야 할 점" — 협업·설계 철학 관점 실용 인사이트 2~3단락 (bullet 아닌 자연스러운 문장, \\n\\n으로 단락 구분)
+- tags: 기술 태그 + 아티클 도메인 태그 혼합 (AI, LLM, RAG, Agent, Product, Engineering, Research, 핀테크, 서비스 아키텍처 등)
 - 저장 완료 후에는 무엇을 저장했는지 간단히 확인 메시지 제공
 
 **응답 스타일:**
