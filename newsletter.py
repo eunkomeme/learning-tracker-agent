@@ -164,10 +164,10 @@ def process_single_article(
         f"반드시 아래 형식의 JSON만 응답하세요 (마크다운 코드블록 없이):\n"
         f'{{\n'
         f'  "title": "아티클 제목 (한국어 또는 영어)",\n'
-        f'  "summary": "핵심 내용 한국어 요약 (3~5문장)",\n'
-        f'  "key_insights": "• 핵심 인사이트1\\n• 핵심 인사이트2\\n• 핵심 인사이트3",\n'
+        f'  "summary": "문제/상황 1~2문장\\n∙ 개념명: 설명\\n∙ 개념명: 설명 (핵심 개념 2~4개)",\n'
+        f'  "key_insights": "PM이 꼭 알아야 할 점: 협업·설계 철학 관점 실용 인사이트 2~3단락 (단락 사이 \\n\\n, bullet 아닌 자연스러운 문장)",\n'
         f'  "tags": ["태그1", "태그2"],\n'
-        f'  "source": "출처명 (예: yozm IT, Medium, arXiv)"\n'
+        f'  "source": "출처명 (예: yozm IT, Medium, arXiv, 카카오테크블로그)"\n'
         f'}}'
     )
 
