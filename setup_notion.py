@@ -71,8 +71,6 @@ def create_database(notion: Client, parent_page_id: str) -> str:
                 }
             },
             "URL": {"url": {}},
-            "Summary": {"rich_text": {}},
-            "Key Insights": {"rich_text": {}},
             "Source": {"rich_text": {}},
             "Notes": {"rich_text": {}},
         },
