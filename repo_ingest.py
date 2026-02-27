@@ -19,7 +19,11 @@ from typing import Iterable
 
 import trafilatura
 from dotenv import load_dotenv
-from pypdf import PdfReader
+
+try:
+    from pypdf import PdfReader
+except BaseException:
+    PdfReader = None  # type: ignore
 
 from notion_db import NotionDB
 
