@@ -1,6 +1,6 @@
-# Codex/Claude Code + Notion 자동 요약 (무료 운영 가이드)
+# GitHub Actions + Gemini + Notion 자동 요약 (무료 운영 가이드)
 
-Gemini API 고정 구조 대신, **리포지토리 기반 입력(URL/PDF)** + **실행 에이전트(Codex/Claude Code)** + **Notion 저장** 구조로 바꿀 수 있습니다.
+**리포지토리 기반 입력(URL/PDF)** + **GitHub Actions 실행** + **Notion 저장** 구조로 무료 운영할 수 있습니다.
 
 ## 핵심 결론
 
@@ -16,17 +16,13 @@ Gemini API 고정 구조 대신, **리포지토리 기반 입력(URL/PDF)** + **
 4. Notion DB 저장
 5. URL 중복은 `url_exists` 체크로 방지 (파일 아카이브는 운영 정책에 따라 별도 처리)
 
-## LLM 공급자 전략
+## LLM 전략 (CI 전용)
 
-`repo_ingest.py`에서 공급자 인터페이스를 두고 모델을 교체하거나, `auto` 모드로 무료 티어 우선 폴백 라우팅을 사용할 수 있습니다.
+`repo_ingest.py`는 Gemini 무료 API를 사용합니다.
 
-- `GeminiProvider`
-- `ClaudeCliProvider` (로컬 Claude Code CLI + Claude Pro 구독)
-- `auto` 모드: `LLM_PROVIDER_CHAIN` 순서대로 실패 시 다음 공급자로 자동 전환
-  - 기본값: `gemini,claude_cli`
-  - 예시: Gemini 우선, 실패/쿼터 초과 시 Claude Pro CLI로 폴백
-
-반환 스키마는 현재 Notion 저장 구조(`title / summary / key_insights / tags / source`)를 유지합니다.
+- 긴 문서는 청크 단위로 분할(Map) 후 최종 통합(Reduce)
+- 429/리소스 제한 시 재시도 + 지수 백오프
+- 반환 스키마는 `title / summary / key_insights / tags / source` 유지
 
 ## GitHub Actions로 무료 운영
 
@@ -68,11 +64,9 @@ jobs:
         env:
           NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
           NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
-          LLM_PROVIDER: ${{ secrets.LLM_PROVIDER }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          # Claude CLI 기반 폴백은 로컬/셀프호스팅 러너에서 권장
         run: |
-          python repo_ingest.py --input-dir inputs --provider "${LLM_PROVIDER:-auto}" --provider-chain "${LLM_PROVIDER_CHAIN:-gemini,claude_cli}"
+          python repo_ingest.py --input-dir inputs --provider "${LLM_PROVIDER:-gemini}" --provider-chain "${LLM_PROVIDER_CHAIN:-gemini}"
 ```
 
 ## 만료/운영 안정성 체크리스트
@@ -83,19 +77,15 @@ jobs:
 - 실패 시 재시도 로직(backoff) 추가 권장
 - 중복 저장 방지(`url_exists`) 유지
 
-## Codex/Claude Code 연결 방법
+## 실행 방식
 
-두 방식 중 하나를 선택합니다.
-
-1. **로컬 실행형**: Codex/Claude Code가 리포를 직접 읽고 스크립트를 실행
-2. **CI 실행형**: 에이전트는 입력 파일만 커밋하고, 요약/저장은 GitHub Actions가 수행
-
-운영 단순성은 CI 실행형이 가장 높습니다.
+- **CI 실행형 권장**: 입력 파일 커밋만 하면 GitHub Actions가 요약/저장을 수행
+- 로컬 로그인 의존(브라우저/CLI 인증) 구조는 CI에서 동작하지 않으므로 배제
 
 ## 비용 관점
 
 - 서버 비용: 0원 (GitHub Actions 무료 한도 내)
-- 모델 비용: Gemini API + Claude Pro 구독 범위 내에서 운영 가능 (추가 API 과금 회피)
+- 모델 비용: Gemini API 무료 티어 범위 내 운영 가능 (추가 API 과금 회피)
 - Notion API 자체는 일반적으로 별도 사용료 없이 통합 가능
 
 즉, "유료 서버 없이"는 충분히 가능하고,

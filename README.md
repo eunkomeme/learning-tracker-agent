@@ -82,13 +82,13 @@ Git 커밋 자체가 인풋 트리거가 된다. 별도의 웹 UI나 API 없이 
 - **얻은 것**: 인프라 복잡도 0, 별도 서버 불필요
 - Telegram 봇(v1)은 실시간 편리하지만 서버가 필요해 보조 채널로만 유지
 
-### 2. LLM 멀티 프로바이더 지원
+### 2. Gemini 고정 + 긴 문서 안전 요약
 
-Gemini API와 Claude Pro(Claude Code CLI)를 환경변수로 교체/폴백할 수 있도록 설계했다.
+GitHub Actions(CI)에서 100% 실행 가능하도록 요약 공급자는 Gemini 무료 API로 고정했다.
 
-- **이유**: 특정 API에 종속되지 않고, 비용과 성능을 직접 비교하기 위해
-- **트레이드오프**: 구현 복잡도 증가 vs. 공급자 유연성
-- 현재 기본값은 `LLM_PROVIDER=auto` + `LLM_PROVIDER_CHAIN=gemini,claude_cli` (Gemini 우선 + Claude Pro CLI 폴백)
+- **이유**: 로컬 브라우저 로그인 의존(Claude CLI) 없이 CI 환경에서 안정적으로 동작시키기 위해
+- **안정화 포인트**: 긴 문서를 청크 단위로 나눠 요약(Map) 후, 최종 통합(Reduce)하는 구조 적용
+- **추가 보호장치**: 무료 티어 RPM 제한을 고려한 재시도 + 지수 백오프
 
 ### 3. URL 중복 방지를 DB 쿼리로 처리
 
@@ -136,7 +136,7 @@ Notion에 저장되는 필드:
 
 ## 빠른 시작
 
-**전제 조건**: Python 3.11+, Notion API 토큰, Gemini API 키 또는 Claude Code CLI 로그인 상태
+**전제 조건**: Python 3.11+, Notion API 토큰, Gemini API 키
 
 **설치 및 실행:**
 
@@ -149,14 +149,15 @@ pip install -r requirements.txt
 ```env
 NOTION_TOKEN=...
 NOTION_DATABASE_ID=...
-LLM_PROVIDER=auto            # auto / gemini / claude_cli
-LLM_PROVIDER_CHAIN=gemini,claude_cli  # auto일 때 폴백 순서
-GEMINI_API_KEY=...           # Gemini 사용 시
-CLAUDE_CLI_COMMAND=claude    # Claude Code CLI 실행 파일 (기본: claude)
+LLM_PROVIDER=auto            # auto / gemini
+LLM_PROVIDER_CHAIN=gemini    # auto일 때 순서 (현재 Gemini 단일)
+GEMINI_API_KEY=...           # Google AI Studio 무료 키
+GEMINI_CHUNK_SIZE=6000       # 선택: 긴 문서 청크 크기 조절
+GEMINI_MAX_RETRIES=5         # 선택: 429/쿼터 제한 시 재시도 횟수
 ```
 
 ```bash
-python repo_ingest.py --input-dir inputs --provider auto --provider-chain gemini,claude_cli
+python repo_ingest.py --input-dir inputs --provider auto --provider-chain gemini
 ```
 
 **GitHub Actions 자동화 설정:**
@@ -168,8 +169,8 @@ python repo_ingest.py --input-dir inputs --provider auto --provider-chain gemini
 |------------|------|
 | `NOTION_TOKEN` | Notion 통합 토큰 |
 | `NOTION_DATABASE_ID` | 저장할 Notion DB ID |
-| `LLM_PROVIDER` | `auto` / `gemini` / `claude_cli` |
-| `GEMINI_API_KEY` / `CLAUDE_CLI_COMMAND` | Gemini 키 또는 Claude CLI 실행 설정 |
+| `LLM_PROVIDER` | `auto` / `gemini` |
+| `GEMINI_API_KEY` | Google AI Studio Gemini API 키 |
 
 ---
 

@@ -1,7 +1,7 @@
 """Repository-driven ingest pipeline for Learning Tracker.
 
 - Reads URLs / text / PDF files from an input directory.
-- Summarizes with selectable LLM provider (gemini/claude_cli).
+- Summarizes with Gemini provider.
 - Stores normalized records into Notion DB.
 """
 
@@ -12,7 +12,7 @@ import io
 import json
 import os
 import re
-import subprocess
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
@@ -75,51 +75,87 @@ class GeminiProvider(Provider):
             model_name=os.environ.get("GEMINI_MODEL", "gemini-2.0-flash"),
             system_instruction=SYSTEM_PROMPT,
         )
+        self.chunk_size = int(os.environ.get("GEMINI_CHUNK_SIZE", "6000"))
+        self.max_retries = int(os.environ.get("GEMINI_MAX_RETRIES", "5"))
 
-    def summarize(self, title: str, url: str, article_text: str) -> dict:
-        prompt = f"title: {title}\nurl: {url}\narticle_text:\n{article_text}"
-        text = (self.model.generate_content(prompt).text or "").strip()
+    def _generate(self, prompt: str) -> str:
+        wait_s = 2
+        last_exc: Exception | None = None
+
+        for _ in range(self.max_retries):
+            try:
+                return (self.model.generate_content(prompt).text or "").strip()
+            except Exception as exc:  # noqa: BLE001
+                last_exc = exc
+                err = str(exc).lower()
+                # 무료 Gemini API의 RPM 한도를 고려한 백오프
+                if "429" in err or "resource_exhausted" in err or "rate" in err:
+                    time.sleep(wait_s)
+                    wait_s = min(wait_s * 2, 30)
+                    continue
+                raise
+
+        raise RuntimeError(f"Gemini generate_content failed after retries: {last_exc}")
+
+    def _chunk_text(self, text: str) -> list[str]:
+        normalized = text.strip()
+        if not normalized:
+            return []
+        return [
+            normalized[idx : idx + self.chunk_size]
+            for idx in range(0, len(normalized), self.chunk_size)
+        ]
+
+    def _map_chunk(self, chunk_text: str, index: int, total: int) -> dict:
+        map_prompt = f"""아래는 문서 일부(청크)입니다. 이 청크만 기준으로 JSON을 생성하세요.
+
+chunk_index: {index}/{total}
+chunk_text:
+{chunk_text}
+
+반드시 아래 JSON만 출력:
+{{
+  "chunk_summary": "한국어 2~4문장",
+  "key_points": ["핵심 포인트 1", "핵심 포인트 2", "핵심 포인트 3"],
+  "tags": ["태그1", "태그2", "태그3"],
+  "source_hint": "출처 추정 (없으면 빈 문자열)"
+}}
+"""
+        text = self._generate(map_prompt)
         return parse_json_response(text)
 
+    def _reduce_chunks(self, title: str, url: str, map_results: list[dict]) -> dict:
+        reduce_payload = {
+            "title": title,
+            "url": url,
+            "chunks": map_results,
+        }
+        reduce_prompt = f"""다음은 문서 청크별 요약 결과입니다. 이를 종합해서 최종 JSON을 생성하세요.
 
-class ClaudeCliProvider(Provider):
-    def __init__(self):
-        self.command = os.environ.get("CLAUDE_CLI_COMMAND", "claude")
-        self.model = os.environ.get("CLAUDE_CLI_MODEL", "")
-        self.timeout_s = int(os.environ.get("CLAUDE_CLI_TIMEOUT_S", "180"))
+{json.dumps(reduce_payload, ensure_ascii=False)}
+
+반드시 아래 스키마의 JSON 문자열만 출력:
+{{
+  "title": "...",
+  "summary": "...",
+  "key_insights": "- ...\\n- ...",
+  "tags": ["...", "..."],
+  "source": "..."
+}}
+"""
+        text = self._generate(reduce_prompt)
+        return parse_json_response(text)
 
     def summarize(self, title: str, url: str, article_text: str) -> dict:
-        prompt = (
-            f"{SYSTEM_PROMPT}\n\n"
-            f"title: {title}\n"
-            f"url: {url}\n"
-            f"article_text:\n{article_text}\n"
-        )
-        cmd = [self.command, "-p", prompt]
-        if self.model:
-            cmd.extend(["--model", self.model])
+        chunks = self._chunk_text(article_text)
+        if not chunks:
+            raise ValueError("article_text is empty")
 
-        try:
-            proc = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=self.timeout_s,
-                check=False,
-            )
-        except FileNotFoundError as exc:
-            raise EnvironmentError(
-                f"Claude CLI command not found: {self.command}. Install Claude Code CLI first."
-            ) from exc
-
-        if proc.returncode != 0:
-            stderr = (proc.stderr or "").strip()
-            raise RuntimeError(f"claude CLI failed (code={proc.returncode}): {stderr}")
-
-        output = (proc.stdout or "").strip()
-        if not output:
-            raise RuntimeError("claude CLI returned empty output")
-        return parse_json_response(output)
+        map_results = [
+            self._map_chunk(chunk_text=chunk, index=i + 1, total=len(chunks))
+            for i, chunk in enumerate(chunks)
+        ]
+        return self._reduce_chunks(title=title, url=url, map_results=map_results)
 
 
 def parse_json_response(text: str) -> dict:
@@ -134,8 +170,6 @@ def choose_provider(name: str) -> Provider:
     normalized = name.lower().strip()
     if normalized == "gemini":
         return GeminiProvider()
-    if normalized == "claude_cli":
-        return ClaudeCliProvider()
     raise ValueError(f"Unsupported provider: {name}")
 
 
@@ -147,9 +181,7 @@ def build_provider_chain(chain: str) -> list[Provider]:
         except EnvironmentError as exc:
             print(f"[WARN] provider unavailable ({raw_name}): {exc}")
     if not providers:
-        raise EnvironmentError(
-            "No available providers in chain. Configure GEMINI_API_KEY or Claude CLI."
-        )
+        raise EnvironmentError("No available providers in chain. Configure GEMINI_API_KEY.")
     return providers
 
 
@@ -166,10 +198,6 @@ def summarize_with_fallback(
             last_exc = exc
             print(f"[WARN] summarize failed on {provider.name}: {exc}")
     raise RuntimeError(f"All providers failed. last_error={last_exc}")
-
-
-def truncate(text: str, limit: int = 10000) -> str:
-    return text if len(text) <= limit else text[:limit] + "\n\n[...truncated]"
 
 
 def fetch_url_item(url: str) -> IngestItem:
@@ -192,7 +220,7 @@ def fetch_url_item(url: str) -> IngestItem:
     if metadata and metadata.sitename:
         source = metadata.sitename
 
-    return IngestItem(title=(title or "제목 미상"), content=truncate(content), url=url, source=source)
+    return IngestItem(title=(title or "제목 미상"), content=content, url=url, source=source)
 
 
 def extract_pdf_text(path: Path) -> str:
@@ -201,7 +229,7 @@ def extract_pdf_text(path: Path) -> str:
     content = "\n".join(pages).strip()
     if not content:
         raise ValueError(f"No extractable text in PDF: {path}")
-    return truncate(content)
+    return content
 
 
 def iter_input_items(input_dir: Path) -> Iterable[IngestItem]:
@@ -231,7 +259,7 @@ def iter_input_items(input_dir: Path) -> Iterable[IngestItem]:
         cleaned = raw.strip()
         if len(cleaned) >= 120:
             title = cleaned.splitlines()[0][:60] or file_path.stem[:60] or "텍스트 메모"
-            yield IngestItem(title=title, content=truncate(cleaned), source="Text")
+            yield IngestItem(title=title, content=cleaned, source="Text")
 
 
 def main() -> None:
@@ -242,11 +270,11 @@ def main() -> None:
     parser.add_argument(
         "--provider",
         default=os.environ.get("LLM_PROVIDER", "auto"),
-        help="gemini/claude_cli/auto",
+        help="gemini/auto",
     )
     parser.add_argument(
         "--provider-chain",
-        default=os.environ.get("LLM_PROVIDER_CHAIN", "gemini,claude_cli"),
+        default=os.environ.get("LLM_PROVIDER_CHAIN", "gemini"),
         help="Fallback order when --provider auto is used",
     )
     args = parser.parse_args()
