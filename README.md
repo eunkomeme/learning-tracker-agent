@@ -86,8 +86,7 @@ Git 커밋 자체가 인풋 트리거가 된다. 별도의 웹 UI나 API 없이 
 
 기본값은 Gemini 무료 API로, API 키 하나만으로 CI 환경에서 별도 로그인 없이 동작한다.
 
-- **기본 진입점** (`repo_ingest.py`): Gemini 단독 지원. 긴 문서를 청크 단위로 나눠 요약(Map) 후 통합(Reduce)하는 구조 적용
-- **다중 프로바이더** (`batch_ingest.py`): Gemini 외에 OpenAI·Anthropic도 지원. `--provider openai --model gpt-4o-mini` 등 모델 선택 가능
+- **진입점** (`repo_ingest.py`): Gemini 단독 지원. 긴 문서를 청크 단위로 나눠 요약(Map) 후 통합(Reduce)하는 구조 적용
 - **추가 보호장치**: 무료 티어 RPM 제한을 고려한 재시도 + 지수 백오프
 
 ### 3. URL 중복 방지를 DB 쿼리로 처리
@@ -195,9 +194,3 @@ python repo_ingest.py --input-dir inputs --provider auto
 **뉴스레터 자동화** — RSS 피드와 이메일 뉴스레터에서 아티클 링크를 자동 수집. → `newsletter.py` 참고
 
 **MCP 서버** — `mcp_server.py` + `.mcp.json` 등록. Claude Code(claude.ai/code)에서 Notion DB를 직접 도구로 호출할 수 있다. `add_article`, `search_entries`, `list_recent` 등 NotionDB 작업을 자연어로 실행 가능.
-
-**다중 프로바이더 배치** — `batch_ingest.py`는 Gemini 외에 OpenAI·Anthropic 모델도 지원:
-```bash
-python batch_ingest.py --inputs-dir inputs --provider openai --model gpt-4o-mini
-python batch_ingest.py --inputs-dir inputs --provider anthropic --model claude-haiku-4-5-20251001
-```
