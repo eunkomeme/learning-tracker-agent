@@ -1,196 +1,199 @@
 # Learning Tracker Agent
 
-> 읽고 싶은 아티클을 저장하면, AI가 PM 관점으로 정리해 Notion 지식 베이스에 쌓아 줍니다.
+> 아티클·PDF·텍스트를 저장하면 AI가 PM 관점으로 요약해 Notion 지식 베이스에 자동으로 쌓아 줍니다.
 > 서버 비용 0원. GitHub Actions로 매일 자동 실행.
 
 ---
 
 ## 왜 만들었나
 
-**대상**: 매주 10개 이상의 아티클·논문을 발견하지만, 그것을 체계적으로 쌓지 못하는 지식 노동자.
+매일 좋은 아티클, 논문, PDF를 발견하지만 수동 정리는 시간이 너무 많이 들고, 단순 북마크는 나중에 검색이 불가능하다. Readwise 같은 유료 서비스는 내 Notion 구조와 맞지 않는다.
 
-매일 좋은 아티클, 논문, PDF를 발견하지만 실제로 정리되는 경우는 드물었다.
-
-- **수동 정리**: 시간이 너무 많이 들어 지속하기 어렵다
-- **단순 북마크**: 쌓이기만 하고 나중에 검색이 불가능하다
-- **유료 서비스 (Readwise 등)**: 비용이 발생하고, 내 Notion 구조와 맞지 않는다
-
-결국 좋은 콘텐츠를 발견해도, 나만의 방식으로 체계적으로 쌓는 시스템이 없었다.
+**목표**: 발견하는 즉시 AI가 요약·태그·인사이트를 생성해 Notion에 검색 가능한 형태로 저장하는 제로 인프라 시스템.
 
 ---
 
-## 솔루션
-
-`inputs/` 폴더에 URL, PDF, 텍스트를 넣으면 나머지는 자동으로 처리된다.
-
-1. **저장**: URL 목록(`.txt`) 또는 PDF를 `inputs/` 폴더에 넣는다
-2. **요약**: AI가 핵심 내용을 추출하고, 태그와 인사이트를 생성한다
-3. **정리**: Notion 데이터베이스에 검색 가능한 형태로 저장된다
-
-GitHub Actions를 통해 매일 자동 실행되므로, 폴더에 파일만 추가하면 된다.
-
----
-
-## 결과 및 임팩트
-
-<!-- TODO: Notion DB 결과 스크린샷 (태그·요약·인사이트가 채워진 화면) 추가 -->
-
-| 지표 | 결과 |
-|------|------|
-| 누적 처리 건수 | [N건] |
-| 정리 시간 변화 | [주당 N시간 → N분] |
-| 중복 저장 발생 | 0건 (URL 중복 방지) |
-
-**정성적 변화**: 북마크에 쌓아두기만 하던 습관에서, 매일 Notion에 자동으로 쌓이는 지식 베이스로 전환됐다. 나중에 찾아보고 싶은 주제를 태그로 검색하면 바로 찾을 수 있다.
-
----
-
-## 성공 지표 (KPIs)
-
-이 시스템이 "잘 작동하고 있다"고 판단하는 기준:
-
-| 지표 | 목표 | 측정 방법 |
-|------|------|---------|
-| 요약 정확도 | 문제/해결방향 + 핵심 개념 bullet 구조화, PM 관점 인사이트 포함 | 주관적 샘플 평가 |
-| 중복 저장 건수 | 0건 | Notion DB 검사 |
-| GitHub Actions 실패율 | < 5% | Actions 로그 |
-| 처리 지연 | 입력 후 24시간 이내 Notion 반영 | 커밋 시각 vs. Notion 생성 시각 |
-
----
-
-## 경쟁사 대비 포지셔닝
-
-| 항목 | Learning Tracker | Readwise | Pocket | Notion Clipper |
-|------|-----------------|----------|--------|----------------|
-| 비용 | 서버 비용 0원 (기존 구독 활용) | 월 $7.99~ | 무료/유료 | 무료 |
-| Notion 연동 | 네이티브 | 제한적 | 없음 | 네이티브 |
-| AI 요약 | 커스터마이징 가능 | 자동 하이라이트 | 없음 | 없음 |
-| 한국어 요약 | 지원 | 영어 중심 | 없음 | 없음 |
-| 오픈소스 | O | X | X | X |
-
-핵심 차별점: Notion을 이미 쓰는 사람이라면, 별도 서비스 없이 AI 요약 + 자동 정리를 기존 구독만으로 구현할 수 있다.
-
----
-
-## 핵심 제품 결정
-
-### 1. 입력 방식: UI 없는 폴더 기반 설계
-
-Git 커밋 자체가 인풋 트리거가 된다. 별도의 웹 UI나 API 없이 GitHub 레포지토리가 곧 인터페이스다.
-
-- **포기한 것**: 실시간성 (즉각적인 저장 반응)
-- **얻은 것**: 인프라 복잡도 0, 별도 서버 불필요
-- Telegram 봇(v1)은 실시간 편리하지만 서버가 필요해 보조 채널로만 유지
-
-### 2. LLM 프로바이더 전략
-
-기본값은 Gemini 무료 API로, API 키 하나만으로 CI 환경에서 별도 로그인 없이 동작한다.
-
-- **진입점** (`repo_ingest.py`): Gemini 단독 지원. 긴 문서를 청크 단위로 나눠 요약(Map) 후 통합(Reduce)하는 구조 적용
-- **추가 보호장치**: 무료 티어 RPM 제한을 고려한 재시도 + 지수 백오프
-
-### 3. URL 중복 방지를 DB 쿼리로 처리
-
-같은 URL이 `inputs/` 폴더에 다시 들어와도 Notion에 중복 저장되지 않는다.
-
-- **방식**: 저장 전 `notion.url_exists(url)`로 검사
-- **트레이드오프**: 매 실행마다 Notion API 호출 발생 vs. 이중 저장 방지
-- 이중 저장 방지가 더 중요한 가치라 판단, 이 방향을 선택
-
-### 4. GitHub Actions로 무료 스케줄 실행
-
-유료 서버 없이 운영하는 것이 핵심 제약이었다.
-
-- **방식**: cron 스케줄 `0 22 * * *` (KST 기준 매일 07:00) + 수동 실행(`workflow_dispatch`) 병행
-- **실제 비용**: GitHub Actions 자체는 무료, LLM API 호출량에서만 비용 발생
-- Railway, Heroku 등 유료 서버 대안 검토 후 제외
-
----
-
-## 작동 방식
+## 시스템 구성
 
 ```
-inputs/ 폴더 (URL 목록 / PDF / 텍스트)
-    ↓
-repo_ingest.py — 파일 파싱 + 내용 추출
-    ↓
-LLM Provider — 요약 + 핵심 인사이트 + 태그 생성
-    ↓
-notion_db.py — 중복 확인 → Notion DB 저장
-    ↓
-Notion 지식 베이스 (검색 가능)
+입력 경로
+├── inputs/ 폴더  ─────────────→  repo_ingest.py / batch_ingest.py
+│   (URL·텍스트·PDF 파일)               ↓
+├── Claude Code 채팅창 ─────────→  mcp_server.py (MCP 툴)
+│   (URL·본문 붙여넣기)                  ↓
+├── Telegram 봇 ────────────────→  telegram_bot.py
+│   (URL·PDF 전송)                       ↓
+└── RSS·이메일 뉴스레터 ─────────→  newsletter.py ← scheduler.py (데몬)
+                                         ↓
+                                    notion_db.py
+                                         ↓
+                                  Notion 데이터베이스
 ```
-
-Notion에 저장되는 필드:
-
-| 필드 | 내용 |
-|------|------|
-| `title` | AI가 생성하거나 개선한 제목 |
-| `summary` | 문제/해결방향 1~2문장 + 핵심 개념 bullet (∙ 개념명: 설명) |
-| `key_insights` | PM이 꼭 알아야 할 점 — 협업·설계 철학 관점 실용 인사이트 2~3단락 |
-| `tags` | 검색용 기술 태그 3-6개 |
-| `source` | 출처 매체 (arXiv, Medium, GitHub 등) |
 
 ---
 
-## 빠른 시작
+## Notion DB 스키마
 
-**전제 조건**: Python 3.11+, Notion API 토큰, Gemini API 키
+| 속성 | 타입 | 옵션 |
+|------|------|------|
+| Name | title | — |
+| Type | select | 아티클 \| 이슈 |
+| Status | select | 읽을 예정 \| 읽는 중 \| 완료 \| 대기 중 \| 진행 중 \| 해결됨 |
+| Priority | select | 높음 \| 중간 \| 낮음 (이슈 전용) |
+| Tags | multi_select | AI, LLM, RAG, Agent, Multimodal, Embedding, VectorDB, Prompt Engineering, Product, Engineering, Research, Tool Use |
+| URL | url | — |
+| Source | rich_text | — |
+| Notes | rich_text | — |
 
-**설치 및 실행:**
+Summary와 Key Insights는 DB 속성이 아닌 **페이지 본문 블록**으로 저장됩니다.
+(Callout 블록 = 요약 / Heading2 + 불릿 = 핵심 인사이트)
+
+---
+
+## 환경 변수 설정
+
+> ⚠️ `.env` 파일을 사용하지 않습니다.
+> **Claude Code → 새 클라우드 환경 → 환경 변수**에 `.env` 형식으로 입력하세요.
+
+| 변수 | 필수 | 설명 |
+|------|------|------|
+| `NOTION_TOKEN` | ✅ | Notion Integration 토큰 |
+| `NOTION_DATABASE_ID` | ✅ | 32자리 hex (하이픈 없음) |
+| `GEMINI_API_KEY` | ✅ | Google AI Studio 무료 키 |
+| `OPENAI_API_KEY` | 선택 | batch_ingest.py OpenAI 모드 |
+| `ANTHROPIC_API_KEY` | 선택 | batch_ingest.py Anthropic 모드 |
+| `TELEGRAM_BOT_TOKEN` | 선택 | telegram_bot.py 전용 |
+| `RSS_FEEDS` | 선택 | newsletter.py RSS (콤마 구분 URL) |
+| `EMAIL_IMAP_SERVER` | 선택 | newsletter.py 이메일 |
+| `EMAIL_ADDRESS` | 선택 | newsletter.py 이메일 |
+| `EMAIL_APP_PASSWORD` | 선택 | newsletter.py 이메일 |
+| `NEWSLETTER_SENDERS` | 선택 | newsletter.py 이메일 발신자 필터 |
+
+**GitHub Actions 워크플로는 Claude Code 환경 변수를 공유하지 않습니다.**
+레포 → Settings → Secrets에 `NOTION_TOKEN`, `NOTION_DATABASE_ID`, `GEMINI_API_KEY`를 별도 등록하세요.
+
+---
+
+## 초기 세팅
+
+### 1. Notion DB 생성
 
 ```bash
 pip install -r requirements.txt
+python setup_notion.py
+# 안내에 따라 부모 페이지 ID 입력 → NOTION_DATABASE_ID 출력
 ```
 
-`.env` 파일 설정:
+### 2. 환경 변수 등록
 
-```env
-NOTION_TOKEN=...
-NOTION_DATABASE_ID=...
-LLM_PROVIDER=auto            # auto / gemini
-LLM_PROVIDER_CHAIN=gemini    # auto일 때 순서 (현재 Gemini 단일)
-GEMINI_API_KEY=...           # Google AI Studio 무료 키
+Claude Code 클라우드 환경 UI에 아래 형식으로 입력:
+
 ```
+NOTION_TOKEN=secret_xxxxx
+NOTION_DATABASE_ID=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+GEMINI_API_KEY=AIzaXXXXXX
+```
+
+### 3. GitHub Actions 활성화
+
+레포 → Settings → Secrets → Actions에 동일 변수 등록.
+`.github/workflows/notion-ingest.yml`이 매일 07:00 KST에 자동 실행됩니다.
+
+---
+
+## 사용 방법
+
+### A. Claude Code 채팅창 (가장 빠름)
+
+`.mcp.json`으로 MCP 서버가 자동 등록됩니다.
+채팅창에 URL 또는 아티클 본문을 붙여넣으면 Claude가 `save_article` 툴로 즉시 저장합니다.
+
+### B. inputs/ 폴더
+
+```
+inputs/
+  article.txt     # URL 한 줄 → 크롤링 후 요약
+  notes.txt       # 120자 이상 텍스트 → 그대로 요약
+  paper.pdf       # PDF 텍스트 추출 후 요약
+```
+
+파일을 커밋하면 GitHub Actions가 다음 스케줄(매일 07:00 KST)에 자동 처리합니다.
+즉시 실행하려면: GitHub → Actions → `notion-ingest` → `Run workflow`.
 
 ```bash
-python repo_ingest.py --input-dir inputs --provider auto
+# 로컬에서 직접 실행
+python repo_ingest.py --input-dir inputs --provider gemini
 ```
 
-**GitHub Actions 자동화 설정:**
+### C. Telegram 봇
 
-1. `.github/workflows/notion-ingest.yml` 파일이 이미 포함되어 있음
-2. GitHub 레포 Settings → Secrets에 아래 값 등록:
+URL, 텍스트, PDF 파일을 봇에게 보내면 즉시 Notion에 저장됩니다.
+별도 서버(Railway 등) 필요. → [`TELEGRAM_BOT.md`](TELEGRAM_BOT.md) 참고
 
-| Secret 이름 | 설명 |
-|------------|------|
-| `NOTION_TOKEN` | Notion 통합 토큰 |
-| `NOTION_DATABASE_ID` | 저장할 Notion DB ID |
-| `LLM_PROVIDER` | `auto` / `gemini` |
-| `GEMINI_API_KEY` | Google AI Studio Gemini API 키 |
+### D. RSS·뉴스레터 자동화
 
----
+```bash
+python newsletter.py          # RSS + 이메일 일괄 처리
+python newsletter.py --rss    # RSS만
+python newsletter.py --email  # 이메일만
+python newsletter.py --url https://... # 단일 URL
 
-## Known Limitations & v2 로드맵
+# 매일 09:00에 자동 실행 (데몬)
+python scheduler.py &
+```
 
-### 현재 한계
+### E. 인터랙티브 CLI 에이전트
 
-- **GitHub Actions 실행 한도**: 무료 플랜 월 2,000분 제한 — 대량 처리 시 초과 가능
-- **PDF 지원 범위**: 텍스트 기반 PDF만 지원, 스캔 이미지 PDF는 미지원
-- **UI 없음**: 파일을 레포에 직접 올려야 하므로 비기술 사용자 접근이 어렵다
+```bash
+python agent.py
+```
 
-### v2 검토 항목
-
-- **브라우저 확장**: 웹 클리퍼로 폴더 접근 없이 브라우저에서 즉시 저장
-- **요약 품질 피드백 루프**: Notion에서 요약 평가 → 프롬프트 자동 개선
-- **스캔 PDF 지원**: OCR 연동으로 이미지 기반 PDF도 처리
+Gemini Tool Calling 기반. 자연어로 아티클 저장·검색·상태 변경이 가능합니다.
 
 ---
 
-## 선택적 통합 기능
+## 파일 구조
 
-**Telegram 봇** — 모바일에서 URL/PDF를 봇에게 전송하면 즉시 Notion에 저장. 실시간 저장이 필요한 경우 활용. Railway 1-클릭 배포 지원. → [`TELEGRAM_BOT.md`](TELEGRAM_BOT.md) 참고
+| 파일 | 역할 |
+|------|------|
+| `notion_db.py` | Notion API CRUD 래퍼. 모든 모듈이 공유하는 데이터 레이어 |
+| `mcp_server.py` | Claude Code MCP 서버. 채팅창 → Notion 직접 저장 |
+| `repo_ingest.py` | inputs/ → Gemini Map-Reduce 요약 → Notion. GitHub Actions 진입점 |
+| `batch_ingest.py` | inputs/ → Gemini/OpenAI/Anthropic 선택 → Notion. 로컬 수동용 |
+| `agent.py` | Gemini Tool Calling 인터랙티브 CLI 에이전트 |
+| `newsletter.py` | RSS 피드 + 이메일 뉴스레터 자동 수집·요약 |
+| `scheduler.py` | newsletter.py 일별 자동 실행 데몬 |
+| `telegram_bot.py` | Telegram 실시간 저장 봇 |
+| `setup_notion.py` | 최초 1회: Notion DB 스키마 생성 및 ID 발급 |
+| `.mcp.json` | MCP 서버 등록 설정 (Claude Code 자동 로드) |
+| `.github/workflows/notion-ingest.yml` | 매일 07:00 KST 자동 실행 워크플로 |
 
-**뉴스레터 자동화** — RSS 피드와 이메일 뉴스레터에서 아티클 링크를 자동 수집. → `newsletter.py` 참고
+---
 
-**MCP 서버** — `mcp_server.py` + `.mcp.json` 등록. Claude Code(claude.ai/code)에서 Notion DB를 직접 도구로 호출할 수 있다. `add_article`, `search_entries`, `list_recent` 등 NotionDB 작업을 자연어로 실행 가능.
+## 핵심 설계 결정
+
+### 1. 폴더 기반 입력 (UI 없음)
+
+Git 커밋 자체가 인풋 트리거. 별도 웹 UI나 API 없이 GitHub 레포가 곧 인터페이스.
+포기한 것: 실시간성 / 얻은 것: 인프라 복잡도 0.
+
+### 2. Gemini 기본 + Map-Reduce 구조
+
+무료 Gemini API 하나로 CI 환경에서 동작. 긴 문서는 6,000자 단위로 청크 → 개별 요약(Map) → 통합(Reduce). 무료 RPM 한도를 고려한 지수 백오프 재시도 포함.
+
+### 3. Summary/Key Insights를 페이지 본문 블록으로 저장
+
+DB 속성(필터 대상)에서 페이지 블록으로 이동 → Notion에서 가독성 향상. Tags, Status, URL은 검색·필터링에 필요해 DB 속성으로 유지.
+
+### 4. URL 중복 방지
+
+저장 전 `notion.url_exists(url)`로 DB 쿼리. 같은 URL이 inputs/에 반복 입력돼도 중복 저장 없음.
+
+---
+
+## 한계
+
+- **스캔 PDF**: 텍스트 기반만 지원, OCR 미지원
+- **GitHub Actions 한도**: 무료 플랜 월 2,000분 (대량 처리 시 주의)
+- **batch_ingest.py**: OpenAI 호출 코드 버그 있음 (Gemini는 정상)
+- **newsletter.py**: Gemini 전용, 다른 프로바이더 미지원
