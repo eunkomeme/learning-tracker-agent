@@ -130,7 +130,9 @@ class NotionDB:
                 "setup_notion.py를 먼저 실행해주세요."
             )
 
-        self.client = Client(auth=token)
+        # notion-client v3 defaults to Notion-Version "2025-09-03" which removed
+        # the /databases/{id}/query endpoint. Pin to 2022-06-28 for compatibility.
+        self.client = Client(auth=token, notion_version="2022-06-28")
 
     def add_article(
         self,
@@ -215,11 +217,14 @@ class NotionDB:
         if len(and_conditions) > 1:
             filter_obj = {"and": and_conditions}
 
-        results = self.client.databases.query(
-            database_id=self.db_id,
-            filter=filter_obj,
-            page_size=min(limit, 100),
-            sorts=[{"timestamp": "created_time", "direction": "descending"}],
+        results = self.client.request(
+            path=f"databases/{self.db_id}/query",
+            method="POST",
+            body={
+                "filter": filter_obj,
+                "page_size": min(limit, 100),
+                "sorts": [{"timestamp": "created_time", "direction": "descending"}],
+            },
         )
 
         return [_format_page(p) for p in results.get("results", [])]
@@ -241,17 +246,20 @@ class NotionDB:
                 {"property": "Status", "select": {"equals": status_filter}}
             )
 
-        kwargs: dict = {
-            "database_id": self.db_id,
+        body: dict = {
             "page_size": min(limit, 100),
             "sorts": [{"timestamp": "created_time", "direction": "descending"}],
         }
         if len(filter_conditions) == 1:
-            kwargs["filter"] = filter_conditions[0]
+            body["filter"] = filter_conditions[0]
         elif len(filter_conditions) > 1:
-            kwargs["filter"] = {"and": filter_conditions}
+            body["filter"] = {"and": filter_conditions}
 
-        results = self.client.databases.query(**kwargs)
+        results = self.client.request(
+            path=f"databases/{self.db_id}/query",
+            method="POST",
+            body=body,
+        )
         return [_format_page(p) for p in results.get("results", [])]
 
     def url_exists(self, url: str) -> bool:
@@ -259,10 +267,10 @@ class NotionDB:
         if not url:
             return False
         try:
-            results = self.client.databases.query(
-                database_id=self.db_id,
-                filter={"property": "URL", "url": {"equals": url}},
-                page_size=1,
+            results = self.client.request(
+                path=f"databases/{self.db_id}/query",
+                method="POST",
+                body={"filter": {"property": "URL", "url": {"equals": url}}, "page_size": 1},
             )
             return len(results.get("results", [])) > 0
         except Exception:
