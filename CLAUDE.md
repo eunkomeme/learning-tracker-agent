@@ -6,8 +6,9 @@
 
 ## 프로젝트 개요
 
-Claude Code가 직접 요약·태그·인사이트를 생성하고 MCP 도구로 Notion 데이터베이스에 저장하는 개인 지식 관리 시스템.
-**핵심 철학**: 인프라 비용 0, 별도 AI API 불필요, Notion 네이티브.
+아티클 URL을 입력하면 AI가 요약·태그·인사이트를 생성해 Notion 데이터베이스에 저장하는 개인 지식 관리 시스템.
+입력 방법 2가지: (A) Claude Code 채팅창 MCP, (B) 모바일 웹 브라우저.
+**핵심 철학**: 인프라 비용 최소화, Notion 네이티브.
 
 ---
 
@@ -21,6 +22,10 @@ Claude Code가 직접 요약·태그·인사이트를 생성하고 MCP 도구로
 |------|------|---------|
 | `NOTION_TOKEN` | Notion Integration 토큰 | 필수 |
 | `NOTION_DATABASE_ID` | 32자리 hex (하이픈 없음) | 필수 |
+| `GROQ_API_KEY` | Groq LLM API (web_server.py) | 웹 서버 사용 시 필수 |
+
+**Railway 배포 시**: Railway Variables 탭에 위 세 변수 모두 입력.
+**Claude Code MCP만 사용 시**: Claude Code 환경변수에 NOTION_TOKEN, NOTION_DATABASE_ID만 입력.
 
 ---
 
@@ -30,6 +35,7 @@ Claude Code가 직접 요약·태그·인사이트를 생성하고 MCP 도구로
 |------|------|
 | `notion_db.py` | Notion API CRUD 래퍼. 모든 모듈이 공유하는 데이터 레이어 |
 | `mcp_server.py` | Claude Code용 MCP 서버. 채팅창에서 바로 Notion 저장 가능 |
+| `web_server.py` | FastAPI 웹 서버. 모바일 브라우저 → Groq 요약 → Notion 저장. Railway 배포 |
 | `setup_notion.py` | 최초 1회: Notion DB 스키마 생성 및 NOTION_DATABASE_ID 발급 |
 | `.mcp.json` | MCP 서버 등록 (Claude Code 자동 읽음) |
 

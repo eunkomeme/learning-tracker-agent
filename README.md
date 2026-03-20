@@ -1,7 +1,7 @@
 # Learning Tracker Agent
 
-> 아티클·URL·텍스트를 Claude Code 채팅창에 붙여넣으면 AI가 PM 관점으로 요약해 Notion 지식 베이스에 자동으로 쌓아 줍니다.
-> 서버 비용 0원. 별도 API 키 불필요.
+> 아티클 URL을 넣으면 AI가 PM 관점으로 요약해 Notion 지식 베이스에 자동으로 쌓아 줍니다.
+> 모바일·PC 모두 지원. 두 가지 입력 방식 제공.
 
 ---
 
@@ -16,16 +16,16 @@
 ## 시스템 구성
 
 ```
-Claude Code 채팅창
-  (URL 또는 본문 붙여넣기)
-         ↓
-   mcp_server.py
-  (MCP 도구 제공)
-         ↓
-   notion_db.py
-  (Notion CRUD)
-         ↓
-  Notion 데이터베이스
+A. Claude Code 채팅창 (PC)        B. 웹 브라우저 (모바일 / PC)
+   URL 또는 본문 붙여넣기              https://your-app.railway.app
+           ↓                                    ↓
+     mcp_server.py                       web_server.py
+    (Claude가 직접 요약)              (Groq LLM으로 요약)
+           ↓                                    ↓
+                        notion_db.py
+                       (Notion CRUD)
+                             ↓
+                    Notion 데이터베이스
 ```
 
 ---
@@ -57,6 +57,7 @@ Summary와 Key Insights는 DB 속성이 아닌 **페이지 본문 블록**으로
 |------|------|------|
 | `NOTION_TOKEN` | ✅ | Notion Integration 토큰 |
 | `NOTION_DATABASE_ID` | ✅ | 32자리 hex (하이픈 없음) |
+| `GROQ_API_KEY` | 웹 서버 사용 시 ✅ | [console.groq.com](https://console.groq.com) 무료 발급 |
 
 ---
 
@@ -83,12 +84,25 @@ NOTION_DATABASE_ID=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 ## 사용 방법
 
-`.mcp.json`으로 MCP 서버가 자동 등록됩니다.
-채팅창에 URL 또는 아티클 본문을 붙여넣으면 Claude가 아래 순서로 자동 저장합니다.
+### A. Claude Code 채팅창 (PC)
 
-1. URL 제공 시 `fetch_article_content(url)`로 본문 추출
-2. Claude가 직접 한국어 요약 + 핵심 인사이트 + 태그 생성
-3. `save_article(...)` 호출로 Notion에 저장
+`.mcp.json`으로 MCP 서버가 자동 등록됩니다.
+채팅창에 URL 또는 아티클 본문을 붙여넣으면 Claude가 직접 요약 후 Notion에 저장합니다.
+
+### B. 웹 서버 (모바일 Safari / 어디서나)
+
+Railway에 배포하면 24/7 접속 가능한 웹 페이지를 통해 URL을 제출할 수 있습니다.
+
+**로컬 실행:**
+```bash
+uvicorn web_server:app --reload --port 8000
+```
+
+**Railway 배포:**
+1. [railway.app](https://railway.app) 가입 → 이 레포 연결
+2. Variables 탭에 `NOTION_TOKEN`, `NOTION_DATABASE_ID`, `GROQ_API_KEY` 입력
+3. Start Command: `uvicorn web_server:app --host 0.0.0.0 --port $PORT`
+4. 발급된 URL을 모바일 Safari에서 열기 → 공유 → "홈 화면에 추가"
 
 ---
 
@@ -98,6 +112,7 @@ NOTION_DATABASE_ID=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 |------|------|
 | `notion_db.py` | Notion API CRUD 래퍼. 모든 모듈이 공유하는 데이터 레이어 |
 | `mcp_server.py` | Claude Code MCP 서버. 채팅창 → Notion 직접 저장 |
+| `web_server.py` | FastAPI 웹 서버. 모바일 브라우저 → Groq 요약 → Notion 저장 |
 | `setup_notion.py` | 최초 1회: Notion DB 스키마 생성 및 ID 발급 |
 | `.mcp.json` | MCP 서버 등록 설정 (Claude Code 자동 로드) |
 
@@ -105,9 +120,10 @@ NOTION_DATABASE_ID=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 ## 핵심 설계 결정
 
-### 1. Claude Code가 요약 수행
+### 1. 두 가지 요약 방식
 
-별도 AI API 없이 Claude Code 자체가 요약·태그·인사이트를 생성. MCP 도구는 저장/조회 역할만 담당.
+- **Claude Code MCP**: Claude 자체가 요약. MCP 도구는 저장/조회만 담당. 별도 API 키 불필요.
+- **웹 서버**: Groq 무료 API (LLaMA 모델)가 요약. 모바일에서 24/7 접근 가능.
 
 ### 2. Summary/Key Insights를 페이지 본문 블록으로 저장
 
