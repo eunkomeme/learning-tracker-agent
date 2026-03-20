@@ -1,6 +1,6 @@
 # Learning Tracker Agent
 
-> 아티클 URL을 넣으면 AI가 PM 관점으로 요약해 Notion 지식 베이스에 자동으로 쌓아 줍니다.
+> 아티클 URL을 넣으면 AI가 PM 관점으로 요약해 Notion 지식 베이스에 자동으로 쌓아 줍니다. <br>
 > 모바일·PC 모두 지원. 두 가지 입력 방식 제공.
 
 ---
