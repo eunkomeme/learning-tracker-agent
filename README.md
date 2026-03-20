@@ -91,9 +91,12 @@ NOTION_DATABASE_ID=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 ### B. 웹 서버 (모바일 Safari / 어디서나)
 
-Railway에 배포하면 24/7 접속 가능한 웹 페이지를 통해 URL을 제출할 수 있습니다.
+24/7 접속 가능한 웹 페이지를 통해 URL을 제출할 수 있습니다.
 
 **배포 주소**: https://learning-tracker-production-5794.up.railway.app
+
+<img width="509" height="484" alt="image" src="https://github.com/user-attachments/assets/922cb8dc-b59b-42d2-bb71-f238727b04af" />
+
 
 **로컬 실행:**
 ```bash
