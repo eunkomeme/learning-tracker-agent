@@ -84,7 +84,7 @@ NOTION_DATABASE_ID=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 ## 사용 방법
 
-### A. Claude Code 채팅창 (PC)
+### A. Claude Code 채팅창 (PC/Mobile App)
 
 `.mcp.json`으로 MCP 서버가 자동 등록됩니다.
 채팅창에 URL 또는 아티클 본문을 붙여넣으면 Claude가 직접 요약 후 Notion에 저장합니다.
@@ -96,18 +96,6 @@ NOTION_DATABASE_ID=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 **배포 주소**: https://learning-tracker-production-5794.up.railway.app
 
 <img width="509" height="484" alt="image" src="https://github.com/user-attachments/assets/922cb8dc-b59b-42d2-bb71-f238727b04af" />
-
-
-**로컬 실행:**
-```bash
-uvicorn web_server:app --reload --port 8000
-```
-
-**Railway 배포:**
-1. [railway.app](https://railway.app) 가입 → 이 레포 연결
-2. Variables 탭에 `NOTION_TOKEN`, `NOTION_DATABASE_ID`, `GROQ_API_KEY` 입력
-3. Start Command: `uvicorn web_server:app --host 0.0.0.0 --port $PORT`
-4. 발급된 URL을 모바일 Safari에서 열기 → 공유 → "홈 화면에 추가"
 
 ---
 
